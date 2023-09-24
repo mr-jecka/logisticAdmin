@@ -9,7 +9,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from database import insert_scheduled_arrival,\
     insert_actual_arrival, insert_shipment, insert_departure, get_daily_report
 from aiogram.types import CallbackQuery, InputMediaPhoto
-from media import show_picture
+#from media import show_picture
 from logger import logging
 
 logging.basicConfig(level=logging.INFO)
