@@ -1,0 +1,46 @@
+version: "3.3"
+
+services:
+    postgresql:
+        image: bitnami/postgresql:14.2.0-debian-10-r35
+        networks:
+            - bank
+        ports:
+            - "5432:5432"
+        environment:
+            # Network
+            POSTGRESQL_PORT_NUMBER: 5432
+
+            # User
+            POSTGRES_USER: bank_user
+            POSTGRES_PASSWORD: bank_password
+
+            # General
+            POSTGRES_DB: bank
+            POSTGRESQL_SHARED_PRELOAD_LIBRARIES: pgaudit
+            POSTGRESQL_VOLUME_DIR: /bitnami/postgresql
+            PGDATA: /bitnami/postgresql/data
+
+            # Sec
+            POSTGRESQL_CLIENT_MIN_MESSAGES: error
+            POSTGRESQL_ENABLE_TLS: "no"
+            POSTGRESQL_ENABLE_LDAP: "no"
+
+            # Audit
+            POSTGRESQL_PGAUDIT_LOG_CATALOG: "true"
+            POSTGRESQL_LOG_HOSTNAME: "false"
+            POSTGRESQL_LOG_DISCONNECTIONS: "true"
+            POSTGRESQL_LOG_CONNECTIONS: "true"
+
+            BITNAMI_DEBUG: "false"
+
+        volumes:
+            - postgresql_data:/bitnami/postgresql
+            #- ./init-scripts:/docker-entrypoint-initdb.d/
+networks:
+  bank:
+    driver: bridge
+
+volumes:
+    postgresql_data:
+        driver: local

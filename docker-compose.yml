@@ -1,0 +1,22 @@
+version: "3.7"
+
+services:
+    logistic:
+        image: logisticadmin
+        build:
+            context: ./app
+            dockerfile: Dockerfile
+        networks:
+            - bank
+        ports:
+            - "8080:8000"
+        environment:
+            - DATABASE_URL=postgresql://bank_user:bank_password@postgresql:5432/bank
+
+networks:
+    bank:
+        driver: bridge
+
+volumes:
+    postgresql_data:
+        driver: local
