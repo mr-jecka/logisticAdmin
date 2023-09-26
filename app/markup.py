@@ -1,9 +1,12 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 dispatcher = None
+
+
 def init(dp):
     global dispatcher
     dispatcher = dp
+
 
 mainMenu = InlineKeyboardMarkup(row_width=1)
 
@@ -14,6 +17,7 @@ btnDeparture = InlineKeyboardButton(text="⬆️  Выезд", callback_data="De
 btnReport = InlineKeyboardButton(text="📝  Отчёт", callback_data="Report")
 btnPicture = InlineKeyboardButton(text="📝  Отчёт-картинка", callback_data="Picture")
 btnTable = InlineKeyboardButton(text="📝  Отчёт-таблица", callback_data="Table")
+btnInput = InlineKeyboardButton(text="➕  Записать в БД новую накладную", callback_data="inputBD")
 
 #mainMenu.insert(btnScheduledArrival)
 #mainMenu.insert(btnActualArrival)
@@ -22,3 +26,4 @@ btnTable = InlineKeyboardButton(text="📝  Отчёт-таблица", callback
 #mainMenu.insert(btnReport)
 mainMenu.insert(btnPicture)
 mainMenu.insert(btnTable)
+mainMenu.insert(btnInput)

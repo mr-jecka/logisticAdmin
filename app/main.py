@@ -6,17 +6,18 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher.filters import Command
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from database import insert_scheduled_arrival,\
-    insert_actual_arrival, insert_shipment, insert_departure, get_daily_report
+from database import insert_excel_to_db, get_daily_report
 from aiogram.types import CallbackQuery, InputMediaPhoto
 #from media import show_picture
 from logger import logging
 from tabulate import tabulate
 import os
-import openpyxl
 from openpyxl.styles import Alignment
 from aiogram.types import InputFile
 from PIL import Image, ImageDraw, ImageFont
+import openpyxl
+from datetime import datetime
+import database
 
 
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +32,7 @@ class EnterForm(StatesGroup):
     waiting_for_actual_arrival = State()
     waiting_for_shipment = State()
     waiting_for_departure = State()
+    waiting_for_reestr = State()
 
 
 nav.init(dp)
@@ -42,81 +44,119 @@ async def start(message: types.Message):
     await bot.send_message(message.chat.id, mess, reply_markup=nav.mainMenu)
     logging.info(f"User {message.from_user.username} started the bot.")
 
-# @dp.callback_query_handler(text="Scheduled_arrival")
-# async def add_arrival(message: types.Message):
-#     await bot.send_message(message.from_user.id, "Введите время прибытия: например, 09:45")
-#     await EnterForm.waiting_for_scheduled_arrival.set()
-#
-# @dp.message_handler(state=EnterForm.waiting_for_scheduled_arrival)
-# async def process_add_scheduled_arrival(message: types.Message, state: FSMContext):
-#     try:
-#         date_time_str = message.text.strip()
-#         date_time_obj = datetime.strptime(date_time_str, '%H:%M')
-#         user_id = message.from_user.id
-#         insert_scheduled_arrival(user_id, date_time_obj)
-#         await state.finish()
-#         await bot.send_message(message.from_user.id, "Есть прибытие!")
-#     except ValueError:
-#         await bot.send_message(message.from_user.id, "неверный формат времени")
-#     finally:
-#         await start(message)
 
-# @dp.callback_query_handler(text="Actual_arrival")
-# async def add_arrival(message: types.Message):
-#     await bot.send_message(message.from_user.id, "Введите время прибытия: например, 09:45")
-#     await EnterForm.waiting_for_actual_arrival.set()
-#
-# @dp.message_handler(state=EnterForm.waiting_for_actual_arrival)
-# async def process_add_actual_arrival(message: types.Message, state: FSMContext):
-#     try:
-#         date_time_str = message.text.strip()
-#         date_time_obj = datetime.strptime(date_time_str, '%H:%M')
-#         user_id = message.from_user.id
-#         insert_actual_arrival(user_id, date_time_obj)
-#         await state.finish()
-#         await bot.send_message(message.from_user.id, "Есть прибытие!")
-#     except ValueError:
-#         await bot.send_message(message.from_user.id, "неверный формат времени")
-#     finally:
-#         await start(message)
+@dp.callback_query_handler(text="inputBD")
+async def address(message: types.Message):
+    await bot.send_message(message.from_user.id, "Please attach the Excel file (reestr.xlsx):")
+    await EnterForm.waiting_for_reestr.set()
 
-# @dp.callback_query_handler(text="Shipment")
-# async def add_shipment(message: types.Message):
-#     await bot.send_message(message.from_user.id, "Введите время начала погрузки: например, 10:45")
-#     await EnterForm.waiting_for_shipment.set()
+
+@dp.message_handler(content_types=types.ContentType.DOCUMENT, state=EnterForm.waiting_for_reestr)
+async def input_reestr(message: types.Message, state: FSMContext):
+    if message.document.file_name.endswith('.xlsx'):
+        file_id = message.document.file_id
+        file_info = await bot.get_file(file_id)
+        file_path = file_info.file_path
+        downloaded_file = await bot.download_file(file_path)
+        with open("reestr.xlsx", "wb") as file:
+            file.write(downloaded_file.read())
+
+        ths = await parsed_reestr("reestr.xlsx")
+
+        formatted_message = "Parsed transportation records:\n\n"
+        for idx, th in enumerate(ths, start=1):
+            formatted_message += f"Transportation {idx}:\n"
+            formatted_message += f"Number: {th['num_th']}\n"
+            formatted_message += f"Date: {th['date_th']}\n"
+            formatted_message += f"Total Count Boxes: {th['total_count_boxes']}\n"
+            formatted_message += f"Total Weight: {th['total_weight']}\n\n"
+
+        await message.answer("Excel file received and saved. You can process it now.")
+        await message.answer(formatted_message)
+        database.insert_excel_to_db("reestr.xlsx", database.conn)
+    else:
+        await message.answer("Please attach a valid Excel file (reestr.xlsx).")
+    await state.finish()
+
+
+async def parsed_reestr(excel_file_path):
+    ths = []
+    wb = openpyxl.load_workbook(excel_file_path, data_only=True)
+    sheet = wb.active
+    th = {}
+    for row in sheet.iter_rows(min_row=5, values_only=True):
+        if row[2] is not None:
+            if len(th.keys()) != 0:
+                ths.append(th)
+            th = {}
+            th["num_th"] = row[2]
+            th["date_th"] = datetime.strptime(row[3], '%d.%m.%Y').strftime('%Y-%m-%d')
+            th["total_count_boxes"] = int(row[9])
+            th["total_weight"] = float(row[10])
+            th["addresses"] = []
+        else:
+            addr = {}
+            addr["num_route"] = row[4]
+            addr["num_shop"] = row[6]
+            addr["code_tt"] = row[7]
+            addr["address_delivery"] = row[8]
+            addr["count_boxes"] = int(row[9])
+            addr["weight"] = float(row[10])
+            th["addresses"].append(addr)
+    ths.append(th)
+    return ths
+
+
+
+# @dp.callback_query_handler(text="inputBD")
+# async def address(message: types.Message):
+#     await bot.send_message(message.from_user.id, "Please attach the Excel file (reestr.xlsx):")
+#     await EnterForm.waiting_for_reestr.set()
 #
-# @dp.message_handler(state=EnterForm.waiting_for_shipment)
-# async def process_add_shipment(message: types.Message, state: FSMContext):
-#     try:
-#         date_time_str = message.text.strip()
-#         date_time_obj = datetime.strptime(date_time_str, '%H:%M')
-#         user_id = message.from_user.id
-#         insert_shipment(user_id, date_time_obj)
-#         await state.finish()
-#         await bot.send_message(message.from_user.id, "Время погрузки зафиксировано!")
-#     except ValueError:
-#         await bot.send_message(message.from_user.id, "неверный формат времени")
-#     finally:
-#         await start(message)
 #
-# @dp.callback_query_handler(text="Departure")
-# async def add_departure(message: types.Message):
-#     await bot.send_message(message.from_user.id, "Введите время выезда: например, 11:20")
-#     await EnterForm.waiting_for_departure.set()
+# @dp.message_handler(content_types=types.ContentType.DOCUMENT, state=EnterForm.waiting_for_reestr)
+# async def input_reestr(message: types.Message, state: FSMContext):
+#     if message.document.file_name.endswith('.xlsx'):
+#         file_id = message.document.file_id
+#         file_info = await bot.get_file(file_id)
+#         file_path = file_info.file_path
+#         downloaded_file = await bot.download_file(file_path)
+#         with open("reestr.xlsx", "wb") as file:
+#             file.write(downloaded_file.read())
 #
-# @dp.message_handler(state=EnterForm.waiting_for_departure)
-# async def process_add_departure(message: types.Message, state: FSMContext):
-#     try:
-#         date_time_str = message.text.strip()
-#         date_time_obj = datetime.strptime(date_time_str, '%H:%M')
-#         user_id = message.from_user.id
-#         insert_departure(user_id, date_time_obj)
-#         await state.finish()
-#         await bot.send_message(message.from_user.id, "Счастливого пути!")
-#     except ValueError:
-#         await bot.send_message(message.from_user.id, "неверный формат времени")
-#     finally:
-#         await start(message)
+#         await message.answer("Excel file received and saved. You can process it now.")
+#     else:
+#         await message.answer("Please attach a valid Excel file (reestr.xlsx).")
+#     await state.finish()
+#
+#
+# async def parsed_reestr:
+#     ths = []
+#     wb = openpyxl.load_workbook('reestr.xlsx', data_only=True)
+#     sheet = wb.active
+#     th = {}
+#     for row in sheet.iter_rows(min_row=5, values_only=True):
+#         if row[2] is not None:
+#             if len(th.keys()) != 0:
+#                 ths.append(th)
+#             th = {}
+#             th["num_th"] = row[2]
+#             # Convert the date format to 'YYYY-MM-DD'
+#             th["date_th"] = datetime.strptime(row[3], '%d.%m.%Y').strftime('%Y-%m-%d')
+#             th["total_count_boxes"] = int(row[9])
+#             th["total_weight"] = float(row[10])
+#             th["addresses"] = []
+#         else:
+#             addr = {}
+#             addr["num_route"] = row[4]
+#             addr["num_shop"] = row[6]
+#             addr["code_tt"] = row[7]
+#             addr["address_delivery"] = row[8]
+#             addr["count_boxes"] = int(row[9])
+#             addr["weight"] = float(row[10])
+#             th["addresses"].append(addr)
+#     ths.append(th)
+
 
 
 @dp.callback_query_handler(text="Report")
@@ -182,64 +222,6 @@ async def show_daily_report_excel(call: CallbackQuery):
         await bot.send_document(call.from_user.id, InputFile(excel_file))
     os.remove(temp_file_path)
     await call.answer()
-
-
-@dp.callback_query_handler(text="Table_1")
-async def show_daily_report(call: CallbackQuery):
-    report_date = datetime.now().date()
-    daily_report = get_daily_report(report_date)
-    table_data = [["Номер машины", "Фамилия", "Имя", "Отчество", "Прибытие по регламенту", "Прибытие фактическое","Погрузка", "Выезд"]]
-    for row in daily_report:
-        car_number, last_name, first_name, patronymic, scheduled_arrival, actual_arrival, shipment, departure = row
-        table_data.append([car_number, last_name, first_name, first_name, patronymic, scheduled_arrival, actual_arrival, shipment, departure])
-    colalign = ("center",) * 4
-    table = tabulate(table_data, headers="firstrow", tablefmt="grid", colalign=colalign)
-    await bot.send_message(call.from_user.id, f"Отчёт за {report_date}:\n{table}")
-    await call.answer()
-
-
-# @dp.callback_query_handler(text="Picture")
-# async def show_daily_report(call: CallbackQuery):
-#     report_date = datetime.now().date()
-#     daily_report = get_daily_report(report_date)
-#
-#     img = Image.new("RGB", (500, 450), color=(255, 255, 255))
-#     draw = ImageDraw.Draw(img)
-#
-#     font = ImageFont.truetype("arial.ttf", 12)
-#
-#     y = 20
-#     for row in daily_report:
-#         user_id, arrival, shipment, departure = row
-#         report_text = f"Водитель: {user_id}, Прибытие: {arrival}, Погрузка: {shipment}, Убытие: {departure}"
-#         draw.text((20, y), report_text, font=font, fill=(0, 0, 0))
-#         y += 20
-#
-#     img.save("daily_report.png")
-#
-#     with open("daily_report.png", "rb") as f:
-#         await bot.send_photo(call.from_user.id, f)
-#
-#     await call.answer()
-
-
-@dp.message_handler(Command("cancel"), state="*")
-async def cancel_command(message: types.Message, state: FSMContext):
-    await state.finish()
-    await bot.send_message(message.from_user.id, "Transaction canceled.")
-    await start(message)
-
-
-@dp.message_handler(Command("cancel"), state="*")
-async def cancel_command(message: types.Message, state: FSMContext):
-    await state.finish()
-    await bot.send_message(message.from_user.id, "Transaction canceled.")
-    await start(message)
-
-
-@dp.message_handler()
-async def handle_invalid_input(message: types.Message):
-    await bot.send_message(message.from_user.id, "Invalid input. Please try again.")
 
 
 if __name__ == "__main__":
