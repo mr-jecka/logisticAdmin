@@ -1,27 +1,24 @@
-from datetime import datetime
-import logging
 from aiogram import Bot, Dispatcher, executor, types
 import markup as nav
-from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.dispatcher.filters import Command
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from database import insert_excel_to_db, get_daily_report
-from aiogram.types import CallbackQuery, InputMediaPhoto
-#from media import show_picture
+from database import get_drivers_for_route, get_daily_report, get_tomorrow_routes, insert_driver_for_route
+from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.dispatcher import FSMContext
 from logger import logging
-from tabulate import tabulate
+from aiogram import types
 import os
 from openpyxl.styles import Alignment
 from aiogram.types import InputFile
 from PIL import Image, ImageDraw, ImageFont
 import openpyxl
-from datetime import datetime
+from datetime import datetime, timedelta
 import database
-
 
 logging.basicConfig(level=logging.INFO)
 TOKEN = "6441679596:AAFtUUqRBRlCGztaIZ8uSfg4ekrz4Vi24fs"
+#TOKEN = "6489569901:AAHBPmIvgYsxj_M_p6x9FnG_RThYEBthcRc" #@MoveTrafficBot
+
 bot = Bot(token=TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
@@ -33,6 +30,8 @@ class EnterForm(StatesGroup):
     waiting_for_shipment = State()
     waiting_for_departure = State()
     waiting_for_reestr = State()
+    waiting_for_routes = State()
+    waiting_for_driver = State()
 
 
 nav.init(dp)
@@ -49,6 +48,66 @@ async def start(message: types.Message):
 async def address(message: types.Message):
     await bot.send_message(message.from_user.id, "Please attach the Excel file (reestr.xlsx):")
     await EnterForm.waiting_for_reestr.set()
+
+
+@dp.message_handler(commands=['start'])
+async def start(message: types.Message):
+    mess = f'👋  Приветствую, {message.from_user.first_name}!  Я твой личный диспетчер! '
+    await bot.send_message(message.chat.id, mess, reply_markup=nav.mainMenu)
+    logging.info(f"User {message.from_user.username} started the bot.")
+
+
+@dp.callback_query_handler(text="distribute_routes")
+async def distribute_route(query: types.CallbackQuery):
+    try:
+        await bot.send_message(query.from_user.id, "Distributing routes between drivers:")
+        tomorrow_date = (datetime.now() + timedelta(days=1)).date()
+        tomorrow_routes = get_tomorrow_routes(tomorrow_date)
+        if tomorrow_routes:
+            route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
+            await bot.send_message(query.from_user.id, "Select a route:", reply_markup=keyboard)
+        else:
+            await bot.send_message(query.from_user.id, "No routes found for tomorrow.")
+
+        @dp.message_handler(lambda message: message.text in [route[0] for route in tomorrow_routes])
+        async def handle_route_choice(message: types.Message):
+            selected_route = message.text
+            await bot.send_message(message.from_user.id, "You selected route: " + selected_route)
+            all_drivers = get_drivers_for_route()
+            if all_drivers:
+                driver_buttons = [KeyboardButton(driver[0]) for driver in all_drivers]
+                driver_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*driver_buttons)
+                await bot.send_message(message.from_user.id, "Select a driver:", reply_markup=driver_keyboard)
+
+                @dp.message_handler(lambda message: message.text in [driver[0] for driver in all_drivers])
+                async def handle_driver_choice(driver_message: types.Message):
+                    nonlocal selected_route
+                    selected_driver = driver_message.text
+                    await bot.send_message(
+                        driver_message.from_user.id, f"You selected route: {selected_route}, driver: {selected_driver}")
+                    insert_driver_for_route(selected_route, selected_driver)
+            else:
+                await bot.send_message(message.from_user.id, "No drivers found for this route.")
+    except Exception as e:
+        logging.error(f"Error in distribute_route: {str(e)}")
+
+
+@dp.message_handler(lambda message: message.text.isdigit())
+async def distribute_driver(message: types.Message, state: FSMContext):
+    try:
+        logging.info(f"Start distribute_route")
+        route_number = message.text
+        await state.update_data(selected_route=route_number)
+        drivers = get_available_drivers()
+        if drivers:
+            driver_buttons = [KeyboardButton(driver[0]) for driver in drivers]
+            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*driver_buttons)
+            await message.answer("Select a driver:", reply_markup=keyboard)
+        else:
+            await message.answer("No available drivers.")
+    except Exception as e:
+        logging.error(f"Error in distribute_route: {str(e)}")
 
 
 @dp.message_handler(content_types=types.ContentType.DOCUMENT, state=EnterForm.waiting_for_reestr)
@@ -71,11 +130,11 @@ async def input_reestr(message: types.Message, state: FSMContext):
             formatted_message += f"Total Count Boxes: {th['total_count_boxes']}\n"
             formatted_message += f"Total Weight: {th['total_weight']}\n\n"
 
-        await message.answer("Excel file received and saved. You can process it now.")
+        await message.answer("Эксель файл сохранён")
         await message.answer(formatted_message)
         database.insert_excel_to_db("reestr.xlsx", database.conn)
     else:
-        await message.answer("Please attach a valid Excel file (reestr.xlsx).")
+        await message.answer("Предоставьте excel-файл (reestr.xlsx).")
     await state.finish()
 
 
@@ -90,7 +149,10 @@ async def parsed_reestr(excel_file_path):
                 ths.append(th)
             th = {}
             th["num_th"] = row[2]
-            th["date_th"] = datetime.strptime(row[3], '%d.%m.%Y').strftime('%Y-%m-%d')
+            if isinstance(row[3], datetime):
+                th["date_th"] = row[3].strftime('%Y-%m-%d')
+            else:
+                th["date_th"] = datetime.strptime(row[3], '%d.%m.%Y').strftime('%Y-%m-%d')
             th["total_count_boxes"] = int(row[9])
             th["total_weight"] = float(row[10])
             th["addresses"] = []
@@ -105,58 +167,6 @@ async def parsed_reestr(excel_file_path):
             th["addresses"].append(addr)
     ths.append(th)
     return ths
-
-
-
-# @dp.callback_query_handler(text="inputBD")
-# async def address(message: types.Message):
-#     await bot.send_message(message.from_user.id, "Please attach the Excel file (reestr.xlsx):")
-#     await EnterForm.waiting_for_reestr.set()
-#
-#
-# @dp.message_handler(content_types=types.ContentType.DOCUMENT, state=EnterForm.waiting_for_reestr)
-# async def input_reestr(message: types.Message, state: FSMContext):
-#     if message.document.file_name.endswith('.xlsx'):
-#         file_id = message.document.file_id
-#         file_info = await bot.get_file(file_id)
-#         file_path = file_info.file_path
-#         downloaded_file = await bot.download_file(file_path)
-#         with open("reestr.xlsx", "wb") as file:
-#             file.write(downloaded_file.read())
-#
-#         await message.answer("Excel file received and saved. You can process it now.")
-#     else:
-#         await message.answer("Please attach a valid Excel file (reestr.xlsx).")
-#     await state.finish()
-#
-#
-# async def parsed_reestr:
-#     ths = []
-#     wb = openpyxl.load_workbook('reestr.xlsx', data_only=True)
-#     sheet = wb.active
-#     th = {}
-#     for row in sheet.iter_rows(min_row=5, values_only=True):
-#         if row[2] is not None:
-#             if len(th.keys()) != 0:
-#                 ths.append(th)
-#             th = {}
-#             th["num_th"] = row[2]
-#             # Convert the date format to 'YYYY-MM-DD'
-#             th["date_th"] = datetime.strptime(row[3], '%d.%m.%Y').strftime('%Y-%m-%d')
-#             th["total_count_boxes"] = int(row[9])
-#             th["total_weight"] = float(row[10])
-#             th["addresses"] = []
-#         else:
-#             addr = {}
-#             addr["num_route"] = row[4]
-#             addr["num_shop"] = row[6]
-#             addr["code_tt"] = row[7]
-#             addr["address_delivery"] = row[8]
-#             addr["count_boxes"] = int(row[9])
-#             addr["weight"] = float(row[10])
-#             th["addresses"].append(addr)
-#     ths.append(th)
-
 
 
 @dp.callback_query_handler(text="Report")
