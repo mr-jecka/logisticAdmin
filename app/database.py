@@ -72,7 +72,6 @@ def insert_driver_for_route(selected_route, selected_driver):
             connection.close()
 
 
-
 def update_driver_assignment(driver_id, selected_route):
     try:
         connection = psycopg2.connect(**conn)
@@ -313,33 +312,5 @@ def get_daily_report(report_date):
         print("Error while connecting to the database or executing query:", error)
 
 
-def insert_alert(user_id, token, amount):
-    try:
-        connection = psycopg2.connect(**conn)
-        cursor = connection.cursor()
-        alert_uuid = str(uuid.uuid4())
-        current_date = date.today().strftime("%Y-%m-%d")
-        insert_query = "INSERT INTO reports (signal_id, user_id, date, token, amount, flag) VALUES (%s, %s, %s, %s, %s, %s)"
-        cursor.execute(insert_query, (alert_uuid, user_id, current_date, token, amount, False))
-        connection.commit()
-        cursor.close()
-        connection.close()
-        print("Data inserted successfully into the 'alerts' table.")
-    except (Exception, psycopg2.Error) as error:
-        print("Error while connecting to the database or inserting data:", error)
 
-
-def get_user_operations(user_id):
-    try:
-        connection = psycopg2.connect(**conn)
-        cursor = connection.cursor()
-        select_query = "SELECT date, token, amount FROM operations WHERE user_id = %s"
-        cursor.execute(select_query, (user_id,))
-        operations = cursor.fetchall()
-        cursor.close()
-        connection.close()
-        return operations
-    except (Exception, psycopg2.Error) as error:
-        print("Error while connecting to the database or fetching data:", error)
-        return []
 
