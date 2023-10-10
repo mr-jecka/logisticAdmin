@@ -8,7 +8,6 @@ services:
         ports:
             - "5432:5432"
         environment:
-            # Network
             POSTGRESQL_PORT_NUMBER: 5432
 
             # User
