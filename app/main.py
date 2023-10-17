@@ -2,7 +2,8 @@ from aiogram import Bot, Dispatcher, executor, types
 import markup as nav
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from database import get_drivers_for_route, get_daily_report, get_tomorrow_routes, insert_driver_for_route
+from database import get_drivers_for_route, get_daily_report, get_tomorrow_routes,\
+    insert_driver_for_route, get_driver_lastname
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
 from logger import logging
@@ -212,26 +213,42 @@ async def show_daily_report(call: CallbackQuery):
 
 @dp.callback_query_handler(text="Table")
 async def show_daily_report_excel(call: CallbackQuery):
-    report_date = datetime.now().date()
-    daily_report = get_daily_report(report_date)
-    if daily_report is None:
-        daily_report = []
-    temp_file_path = "daily_report.xlsx"
-    workbook = openpyxl.Workbook()
-    sheet = workbook.active
-    column_names = ["Номер машины", "Фамилия", "Имя", "Отчество", "Прибытие по регламенту", "Прибытие фактическое",
-                    "Погрузка", "Выезд"]
-    sheet.append(column_names)
-    for row in daily_report:
-        sheet.append(row)
-    for row in sheet.iter_rows(min_row=1, max_row=1, max_col=len(column_names)):
-        for cell in row:
-            cell.alignment = Alignment(horizontal='center')
-    workbook.save(temp_file_path)
-    with open(temp_file_path, "rb") as excel_file:
-        await bot.send_document(call.from_user.id, InputFile(excel_file))
-    os.remove(temp_file_path)
-    await call.answer()
+    selected_route = "0000-013333"
+    selected_driver = get_driver_lastname(selected_route)
+    if selected_driver:
+        logging.info(f"Starting show_daily_report_excel for route {selected_route}")
+        wb = openpyxl.load_workbook('reestr_modified.xlsx')
+        sheet = wb.active
+        sheet.cell(row=5, column=12, value=selected_driver)
+        wb.save('reestr_modified.xlsx')
+        logging.info(f"Updated Excel file with driver {selected_driver}")
+
+
+
+
+
+# @dp.callback_query_handler(text="Table")
+# async def show_daily_report_excel(call: CallbackQuery):
+#     report_date = datetime.now().date()
+#     daily_report = get_daily_report(report_date)
+#     if daily_report is None:
+#         daily_report = []
+#     temp_file_path = "daily_report.xlsx"
+#     workbook = openpyxl.Workbook()
+#     sheet = workbook.active
+#     column_names = ["Номер машины", "Фамилия", "Имя", "Отчество", "Прибытие по регламенту", "Прибытие фактическое",
+#                     "Погрузка", "Выезд"]
+#     sheet.append(column_names)
+#     for row in daily_report:
+#         sheet.append(row)
+#     for row in sheet.iter_rows(min_row=1, max_row=1, max_col=len(column_names)):
+#         for cell in row:
+#             cell.alignment = Alignment(horizontal='center')
+#     workbook.save(temp_file_path)
+#     with open(temp_file_path, "rb") as excel_file:
+#         await bot.send_document(call.from_user.id, InputFile(excel_file))
+#     os.remove(temp_file_path)
+#     await call.answer()
 
 
 if __name__ == "__main__":

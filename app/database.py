@@ -4,14 +4,15 @@ import os
 from datetime import date, datetime
 import openpyxl
 import requests
+from logger import logging
 
 
-user = os.getenv('POSTGRES_USER', 'bank_user')
-password = os.getenv('POSTGRES_PASSWORD', 'bank_password')
+user = os.getenv('POSTGRES_USER', 'postgres')
+password = os.getenv('POSTGRES_PASSWORD', 'postgres')
 #host = os.getenv('POSTGRES_HOST', 'localhost')
-host = os.getenv('POSTGRES_HOST', '194.87.92.15')
+host = os.getenv('POSTGRES_HOST', '45.141.103.29')
 port = os.getenv('POSTGRES_PORT_NUMBER', "5432")
-database = os.getenv('POSTGRES_DB', 'bank')
+database = os.getenv('POSTGRES_DB', 'postgres')
 
 conn = {
     'user': user,
@@ -66,6 +67,24 @@ def insert_driver_for_route(selected_route, selected_driver):
     except (Exception, psycopg2.Error) as error:
         print("Error updating lastname in reestr_table in the database:", error)
         connection.rollback()
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+
+def get_driver_lastname(selected_route):
+    try:
+        connection = psycopg2.connect(**conn)
+        cursor = connection.cursor()
+        cursor.execute(f"SELECT lastname FROM public.reestr_table WHERE num_th = '{selected_route}'")
+        result = cursor.fetchone()
+        if result:
+            return result[0]
+        return None
+    except (Exception, psycopg2.Error) as error:
+        logging.error("Error getting driver lastname from reestr_table:", error)
+        return None
     finally:
         if connection:
             cursor.close()
