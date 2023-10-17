@@ -42,7 +42,7 @@ nav.init(dp)
 async def start(message: types.Message):
     mess = f'👋  Приветствую, {message.from_user.first_name}!  Я твой личный диспетчер! '
     await bot.send_message(message.chat.id, mess, reply_markup=nav.mainMenu)
-    logging.info(f"User {message.from_user.username} started the bot.")
+    logging.info(f"User {message.from_user.username} {message.from_user.id} started the bot.")
 
 
 @dp.callback_query_handler(text="inputBD")
@@ -51,25 +51,18 @@ async def address(message: types.Message):
     await EnterForm.waiting_for_reestr.set()
 
 
-@dp.message_handler(commands=['start'])
-async def start(message: types.Message):
-    mess = f'👋  Приветствую, {message.from_user.first_name}!  Я твой личный диспетчер! '
-    await bot.send_message(message.chat.id, mess, reply_markup=nav.mainMenu)
-    logging.info(f"User {message.from_user.username} started the bot.")
-
-
 @dp.callback_query_handler(text="distribute_routes")
 async def distribute_route(query: types.CallbackQuery):
     try:
-        await bot.send_message(query.from_user.id, "Distributing routes between drivers:")
+        await bot.send_message(query.from_user.id, "Распределите маршруты между водителями")
         tomorrow_date = (datetime.now() + timedelta(days=1)).date()
         tomorrow_routes = get_tomorrow_routes(tomorrow_date)
         if tomorrow_routes:
             route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
             keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
-            await bot.send_message(query.from_user.id, "Select a route:", reply_markup=keyboard)
+            await bot.send_message(query.from_user.id, "Выберете маршрут:", reply_markup=keyboard)
         else:
-            await bot.send_message(query.from_user.id, "No routes found for tomorrow.")
+            await bot.send_message(query.from_user.id, "Не найдены маршруты на завтра")
 
         @dp.message_handler(lambda message: message.text in [route[0] for route in tomorrow_routes])
         async def handle_route_choice(message: types.Message):
@@ -113,6 +106,7 @@ async def distribute_driver(message: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=types.ContentType.DOCUMENT, state=EnterForm.waiting_for_reestr)
 async def input_reestr(message: types.Message, state: FSMContext):
+    logging.info(f"Start input_reestr in BD")
     if message.document.file_name.endswith('.xlsx'):
         file_id = message.document.file_id
         file_info = await bot.get_file(file_id)

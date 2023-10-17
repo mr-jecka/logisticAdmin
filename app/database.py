@@ -1,16 +1,16 @@
 import psycopg2
-import uuid
 import os
-from datetime import date, datetime
 import openpyxl
 import requests
-from logger import logging
+import logging
+from datetime import datetime
+import uuid
 
 
 user = os.getenv('POSTGRES_USER', 'postgres')
 password = os.getenv('POSTGRES_PASSWORD', 'postgres')
-#host = os.getenv('POSTGRES_HOST', 'localhost')
-host = os.getenv('POSTGRES_HOST', '45.141.103.29')
+host = os.getenv('POSTGRES_HOST', 'localhost')
+#host = os.getenv('POSTGRES_HOST', '194.87.92.15')
 port = os.getenv('POSTGRES_PORT_NUMBER', "5432")
 database = os.getenv('POSTGRES_DB', 'postgres')
 
@@ -121,14 +121,28 @@ def get_drivers_for_route():
             connection.close()
 
 
+def generate_and_assign_uuid(cursor, table_name, id_column):
+    new_uuid = uuid.uuid4()
+    new_uuid_str = new_uuid.hex  # Преобразование UUID в строку
+    cursor.execute(f"""
+        UPDATE {table_name}
+        SET {id_column} = %s
+        WHERE {id_column} IS NULL;
+    """, (new_uuid_str,))
+    cursor.connection.commit()
+
+    return new_uuid
+
+
+
+
 def insert_excel_to_db(excel_file_path, db_params):
     try:
         conn = psycopg2.connect(**db_params)
         cursor = conn.cursor()
     except psycopg2.Error as e:
-        print(f"Error connecting to the database: {e}")
+        logging.error(f"Error connecting to the database: {e}")
         return
-
     try:
         ths = []
         wb = openpyxl.load_workbook(excel_file_path, data_only=True)
@@ -141,7 +155,12 @@ def insert_excel_to_db(excel_file_path, db_params):
                     ths.append(th)
                 th = {}
                 th["num_th"] = row[2]
-                th["date_th"] = row[3].strftime('%Y-%m-%d')
+                date_str = row[3]
+                try:
+                    date_th = datetime.strptime(date_str, '%d.%m.%Y')
+                    th["date_th"] = date_th.strftime('%Y-%m-%d')
+                except ValueError:
+                    logging.error(f"Error converting date string: {date_str}")
                 th["total_count_boxes"] = int(row[9])
                 th["total_weight"] = float(row[10])
                 th["addresses"] = []
@@ -186,11 +205,16 @@ def insert_excel_to_db(excel_file_path, db_params):
                             """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"], addr["address_delivery"],
                                   addr["count_boxes"],
                                   addr["weight"], th_id, None, None))
-        print("Data inserted into the database successfully.")
+                        new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
+                        new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
+                        print("New UUID in reestr_table:", new_uuid_in_reestr)
+                        print("New UUID in address_table:", new_uuid_in_address)
+        logging.info("Data inserted into the database successfully.")
     except Exception as e:
-        print(f"Error inserting data into the database: {e}")
+        logging.error(f"Error inserting data into the database: {e}")
     finally:
         conn.close()
+
 
 
 def revers_geocoding_yandex(address):
