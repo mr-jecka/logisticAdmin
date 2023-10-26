@@ -2,8 +2,8 @@ from aiogram import Bot, Dispatcher, executor, types
 import markup as nav
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from database import get_drivers_for_route, get_daily_report, get_tomorrow_routes,\
-    insert_driver_for_route, get_driver_lastname
+from database import get_drivers_for_route, get_daily_report, get_routes,\
+    insert_driver_for_route, get_num_route
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
 from logger import logging
@@ -55,8 +55,8 @@ async def address(message: types.Message):
 async def distribute_route(query: types.CallbackQuery):
     try:
         await bot.send_message(query.from_user.id, "Распределите маршруты между водителями")
-        tomorrow_date = (datetime.now() + timedelta(days=1)).date()
-        tomorrow_routes = get_tomorrow_routes(tomorrow_date)
+        #tomorrow_date = (datetime.now() + timedelta(days=1)).date()
+        tomorrow_routes = get_routes()
         if tomorrow_routes:
             route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
             keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
@@ -206,17 +206,61 @@ async def show_daily_report(call: CallbackQuery):
 
 
 @dp.callback_query_handler(text="Table")
-async def show_daily_report_excel(call: CallbackQuery):
-    selected_route = "0000-013333"
-    selected_driver = get_driver_lastname(selected_route)
-    if selected_driver:
-        logging.info(f"Starting show_daily_report_excel for route {selected_route}")
-        wb = openpyxl.load_workbook('reestr_modified.xlsx')
+async def show_main_report(call: CallbackQuery):
+    logging.info(f"Start show_main_report")
+    selected_num_route = get_num_route()
+    if selected_num_route:
+        logging.info(f"Starting show_daily_report_excel for route {selected_num_route}")
+        try:
+            wb = openpyxl.load_workbook('reestr.xlsx')
+            logging.info(f"'reestr.xlsx' file found and opened successfully.")
+        except Exception as e:
+            logging.error(f"Error opening 'reestr.xlsx'. Exception: {e}")
+            return
         sheet = wb.active
-        sheet.cell(row=5, column=12, value=selected_driver)
-        wb.save('reestr_modified.xlsx')
-        logging.info(f"Updated Excel file with driver {selected_driver}")
+        rows_to_delete = []
 
+        for row in sheet.iter_rows(min_col=5, max_col=5):
+            logging.info(f"Row {row[0].row}: num_route value - {row[0].value}")
+            if row[0].value in selected_num_route:
+                rows_to_delete.append(row[0].row)
+
+        for row_index in reversed(rows_to_delete):
+            sheet.delete_rows(row_index, 1)
+        wb.save('reestr.xlsx')
+        logging.info(f"Updated Excel file by removing rows with driver {selected_num_route}")
+
+
+# @dp.callback_query_handler(text="Table")
+# async def show_main_report(call: CallbackQuery):
+#     logging.info(f"Start show_main_report")
+#     selected_num_route = get_num_route()
+#     if selected_num_route:
+#         logging.info(f"Starting show_daily_report_excel for route {selected_num_route}")
+#         wb = openpyxl.load_workbook('reestr.xlsx')
+#         sheet = wb.active
+#         for row in reversed(sheet.iter_rows(min_col=5, max_col=5)):
+#             logging.info(f"Row {row[0].row}: num_route value - {row[0].value}")
+#             if row[0].value in selected_num_route:
+#                 sheet.delete_rows(row[0].row, 1)
+#         wb.save('reestr.xlsx')
+#         logging.info(f"Updated Excel file by removing rows with driver {selected_num_route}")
+
+
+
+# @dp.callback_query_handler(text="Table")
+# async def show_main_report(call: CallbackQuery):
+#     logging.info(f"Start show_main_report")
+#     selected_num_route = get_num_route()
+#     if selected_num_route:
+#         logging.info(f"Starting show_daily_report_excel for route {selected_num_route}")
+#         wb = openpyxl.load_workbook('reestr.xlsx')
+#         sheet = wb.active
+#         for row in reversed(sheet.iter_rows(min_col=5, max_col=5)):
+#             if not row[0].value or row[0].value == 'NULL':
+#                 sheet.delete_rows(row[0].row, 1)
+#         wb.save('reestr.xlsx')
+#         logging.info(f"Updated Excel file with driver {selected_num_route}")
 
 
 

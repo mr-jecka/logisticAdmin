@@ -23,12 +23,13 @@ conn = {
 }
 
 
-def get_tomorrow_routes(report_date):
+def get_routes():
     connection = psycopg2.connect(**conn)
     try:
         cursor = connection.cursor()
-        tomorrow = report_date.strftime("%Y-%m-%d")
-        cursor.execute(f"SELECT num_th FROM public.reestr_table WHERE date_th = '{tomorrow}'")
+        #tomorrow = report_date.strftime("%Y-%m-%d")
+        cursor.execute(f"SELECT num_th FROM public.reestr_table WHERE lastname IS NULL")
+        #cursor.execute(f"SELECT num_th FROM public.reestr_table WHERE date_th = '{tomorrow}'")
         routes = cursor.fetchall()
         return routes
     except (Exception, psycopg2.Error) as error:
@@ -73,22 +74,24 @@ def insert_driver_for_route(selected_route, selected_driver):
             connection.close()
 
 
-def get_driver_lastname(selected_route):
+def get_num_route():
     try:
         connection = psycopg2.connect(**conn)
         cursor = connection.cursor()
-        cursor.execute(f"SELECT lastname FROM public.reestr_table WHERE num_th = '{selected_route}'")
-        result = cursor.fetchone()
+        cursor.execute("SELECT num_route FROM public.address_table WHERE arrival_date IS NULL")
+        result = cursor.fetchall()
+        logging.info("Fetched num_route values: %s", result)
         if result:
-            return result[0]
-        return None
+            return [row[0] for row in result if row[0]]
+        return []
     except (Exception, psycopg2.Error) as error:
-        logging.error("Error getting driver lastname from reestr_table:", error)
-        return None
+        logging.error("Error getting num_route from address_table:", error)
+        return []
     finally:
         if connection:
             cursor.close()
             connection.close()
+
 
 
 def update_driver_assignment(driver_id, selected_route):
@@ -156,6 +159,8 @@ def insert_excel_to_db(excel_file_path, db_params):
                 th = {}
                 th["num_th"] = row[2]
                 date_str = row[3]
+                if isinstance(date_str, datetime):
+                    date_str = date_str.strftime('%d.%m.%Y')
                 try:
                     date_th = datetime.strptime(date_str, '%d.%m.%Y')
                     th["date_th"] = date_th.strftime('%Y-%m-%d')
@@ -214,7 +219,6 @@ def insert_excel_to_db(excel_file_path, db_params):
         logging.error(f"Error inserting data into the database: {e}")
     finally:
         conn.close()
-
 
 
 def revers_geocoding_yandex(address):
@@ -353,7 +357,3 @@ def get_daily_report(report_date):
         return daily_report
     except (Exception, psycopg2.Error) as error:
         print("Error while connecting to the database or executing query:", error)
-
-
-
-
