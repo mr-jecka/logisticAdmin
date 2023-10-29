@@ -7,12 +7,12 @@ from datetime import datetime
 import uuid
 
 
-user = os.getenv('POSTGRES_USER', 'postgres')
-password = os.getenv('POSTGRES_PASSWORD', 'postgres')
+user = os.getenv('POSTGRES_USER', 'bank_user')
+password = os.getenv('POSTGRES_PASSWORD', 'bank_password')
 host = os.getenv('POSTGRES_HOST', 'localhost')
 #host = os.getenv('POSTGRES_HOST', '194.87.92.15')
 port = os.getenv('POSTGRES_PORT_NUMBER', "5432")
-database = os.getenv('POSTGRES_DB', 'postgres')
+database = os.getenv('POSTGRES_DB', 'bank')
 
 conn = {
     'user': user,
@@ -30,6 +30,23 @@ def get_routes():
         #tomorrow = report_date.strftime("%Y-%m-%d")
         cursor.execute(f"SELECT num_th FROM public.reestr_table WHERE lastname IS NULL")
         #cursor.execute(f"SELECT num_th FROM public.reestr_table WHERE date_th = '{tomorrow}'")
+        routes = cursor.fetchall()
+        return routes
+    except (Exception, psycopg2.Error) as error:
+        print("Error fetching routes from the database:", error)
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+
+def get_info_for_report():
+    connection = psycopg2.connect(**conn)
+    today = datetime.now().date()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT num_th, lastname, num_car, arrival_time_fact, shipment_time, departure_time, arrival_time FROM public.reestr_table WHERE date_th = %s",
+                       (today,))
         routes = cursor.fetchall()
         return routes
     except (Exception, psycopg2.Error) as error:
@@ -58,39 +75,90 @@ def get_driver_last_name(driver_id):
             connection.close()
 
 
-def insert_driver_for_route(selected_route, selected_driver):
+def insert_driver_for_route(selected_route, selected_driver, selected_driver_car, loading_time):
     try:
         connection = psycopg2.connect(**conn)
         cursor = connection.cursor()
         cursor.execute(
-            f"UPDATE public.reestr_table SET lastname = '{selected_driver}' WHERE num_th = '{selected_route}'")
+            f"UPDATE public.reestr_table SET lastname = %s, num_car = %s, arrival_time = %s WHERE num_th = %s",
+            (selected_driver, selected_driver_car, loading_time, selected_route)
+        )
         connection.commit()
     except (Exception, psycopg2.Error) as error:
-        print("Error updating lastname in reestr_table in the database:", error)
+        print("Error updating reestr_table in the database:", error)
         connection.rollback()
     finally:
         if connection:
             cursor.close()
             connection.close()
 
+import psycopg2
 
-def get_num_route():
+def get_main_json():
     try:
         connection = psycopg2.connect(**conn)
         cursor = connection.cursor()
-        cursor.execute("SELECT num_route FROM public.address_table WHERE arrival_date IS NULL")
-        result = cursor.fetchall()
-        logging.info("Fetched num_route values: %s", result)
-        if result:
-            return [row[0] for row in result if row[0]]
+
+        def fetch_addresses(num_th, is_null):
+            condition = "IS NULL" if is_null else "IS NOT NULL"
+            cursor.execute(
+                f"SELECT * FROM public.address_table WHERE num_th = %s AND arrival_date {condition} ORDER BY arrival_date ASC",
+                (num_th,))
+            return cursor.fetchall()
+
+        cursor.execute("SELECT * FROM public.reestr_table")
+        reestr_entries = cursor.fetchall()
+        result = []
+
+        for entry in reestr_entries:
+            num_th = entry[0]
+            addresses = fetch_addresses(num_th, False)
+            addresses += fetch_addresses(num_th, True)
+            address_list = []
+            for idx, addr in enumerate(addresses):
+                if addr[0] is not None:
+                    address_list.append({
+                        "order": idx,
+                        "num_route": addr[0],
+                        "num_shop": addr[1],
+                        "code_tt": addr[2],
+                        "address_delivery": addr[3],
+                        "count_boxes": addr[4],
+                        "weight": addr[5]
+                    })
+
+            if address_list:
+                result.append({
+                    "num_th": num_th,
+                    "date_th": entry[1],
+                    "total_count_boxes": entry[2],
+                    "total_weight": entry[3],
+                    "addreses": address_list
+                })
+
+        return result
+
+    except Exception as e:
+        print(f"Error: {e}")
         return []
-    except (Exception, psycopg2.Error) as error:
-        logging.error("Error getting num_route from address_table:", error)
-        return []
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
+
+# def get_main_json():
+#     try:
+#         connection = psycopg2.connect(**conn)
+#         cursor = connection.cursor()
+#         cursor.execute("SELECT num_route FROM public.address_table WHERE arrival_date IS NULL")
+#         result = cursor.fetchall()
+#         logging.info("Fetched num_route values: %s", [row[0] for row in result if row[0]])
+#         if result:
+#             return [row[0] for row in result if row[0]]
+#         return []
+#     except (Exception, psycopg2.Error) as error:
+#         logging.error("Error getting num_route from address_table:", error)
+#         return []
+#     finally:
+#         if connection:
+#             cursor.close()
+#             connection.close()
 
 
 
@@ -113,7 +181,7 @@ def get_drivers_for_route():
     try:
         connection = psycopg2.connect(**conn)
         cursor = connection.cursor()
-        cursor.execute("SELECT last_name FROM public.drivers WHERE user_id IS NOT NULL")
+        cursor.execute("SELECT last_name, num_car FROM public.drivers WHERE user_id IS NOT NULL")
         drivers = cursor.fetchall()
         return drivers
     except (Exception, psycopg2.Error) as error:
@@ -133,10 +201,7 @@ def generate_and_assign_uuid(cursor, table_name, id_column):
         WHERE {id_column} IS NULL;
     """, (new_uuid_str,))
     cursor.connection.commit()
-
     return new_uuid
-
-
 
 
 def insert_excel_to_db(excel_file_path, db_params):
@@ -192,31 +257,33 @@ def insert_excel_to_db(excel_file_path, db_params):
                     th_id = cursor.fetchone()[0]
 
                     for addr in th["addresses"]:
-                        coordinates = revers_geocoding_yandex(addr["address_delivery"])
-                        if coordinates:
-                            addr["latitude"], addr["longitude"] = coordinates
-                            cursor.execute("""
-                                INSERT INTO address_table (
-                                num_th, num_route, num_shop, code_tt, address_delivery, count_boxes, weight, th_id, latitude, longitude)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                            """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"], addr["address_delivery"],
-                                  addr["count_boxes"],
-                                  addr["weight"], th_id, addr["latitude"], addr["longitude"]))
-                        else:
-                            cursor.execute("""
-                                INSERT INTO address_table (
-                                num_th, num_route, num_shop, code_tt, address_delivery, count_boxes, weight, th_id, latitude, longitude)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                            """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"], addr["address_delivery"],
-                                  addr["count_boxes"],
-                                  addr["weight"], th_id, None, None))
+                        #coordinates = revers_geocoding_yandex(addr["address_delivery"])
+                        # if coordinates:
+                        #     addr["latitude"], addr["longitude"] = coordinates
+                        #     cursor.execute("""
+                        #         INSERT INTO address_table (
+                        #         num_th, num_route, num_shop, code_tt, address_delivery, count_boxes, weight, th_id, latitude, longitude)
+                        #         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                        #     """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"], addr["address_delivery"],
+                        #           addr["count_boxes"],
+                        #           addr["weight"], th_id, addr["latitude"], addr["longitude"]))
+                        # else:
+                        cursor.execute("""
+                            INSERT INTO address_table (
+                            num_th, num_route, num_shop, code_tt, address_delivery, count_boxes, weight, th_id, latitude, longitude)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                        """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"], addr["address_delivery"],
+                              addr["count_boxes"],
+                              addr["weight"], th_id, None, None))
                         new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
                         new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
                         print("New UUID in reestr_table:", new_uuid_in_reestr)
                         print("New UUID in address_table:", new_uuid_in_address)
         logging.info("Data inserted into the database successfully.")
+        return True, "Data inserted into the database successfully."
     except Exception as e:
         logging.error(f"Error inserting data into the database: {e}")
+        return False, f"Error inserting data into the database: {e}"
     finally:
         conn.close()
 
@@ -342,7 +409,7 @@ def insert_departure(user_id, date_time_obj):
         print("Error while connecting to the database or inserting data:", error)
 
 
-def get_daily_report(report_date):
+def get_internal_report(report_date):
     try:
         connection = psycopg2.connect(**conn)
         cursor = connection.cursor()
