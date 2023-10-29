@@ -54,23 +54,24 @@ async def address(message: types.Message):
     await EnterForm.waiting_for_reestr.set()
 
 
-def update_excel_with_route_driver_car(selected_route, selected_driver_name, selected_driver_car):
+def update_excel_with_route_driver_car(selected_route, selected_driver_name, selected_driver_car, selected_time):
     wb = openpyxl.load_workbook('reestr.xlsx')
     sheet = wb.active
 
     for row in range(4, sheet.max_row + 1):
         if sheet.cell(row=row, column=3).value == selected_route:
             sheet.cell(row=row, column=12).value = selected_driver_name
+            sheet.cell(row=row, column=13).value = selected_time
             sheet.cell(row=row, column=14).value = selected_driver_car
             break
 
     wb.save('reestr.xlsx')
 
+
 @dp.callback_query_handler(text="distribute_routes")
 async def distribute_route(query: types.CallbackQuery):
     try:
         await bot.send_message(query.from_user.id, "Распределите маршруты между водителями")
-        #tomorrow_date = (datetime.now() + timedelta(days=1)).date()
         tomorrow_routes = get_routes()
         if tomorrow_routes:
             route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
@@ -96,8 +97,6 @@ async def distribute_route(query: types.CallbackQuery):
                     nonlocal selected_route
                     selected_driver_name = driver_message.text
                     selected_driver_car = all_drivers_dict[selected_driver_name]
-                    update_excel_with_route_driver_car(selected_route, selected_driver_name, selected_driver_car)
-
                     await bot.send_message(
                         driver_message.from_user.id,
                         f"You selected route: {selected_route}, driver: {selected_driver_name}")
@@ -111,15 +110,17 @@ async def distribute_route(query: types.CallbackQuery):
                     @dp.message_handler(lambda message: message.text in loading_times)
                     async def handle_loading_time_choice(time_message: types.Message):
                         selected_time = time_message.text
+                        insert_driver_for_route(
+                            selected_route, selected_driver_name, selected_driver_car, selected_time)
+                        update_excel_with_route_driver_car(
+                            selected_route, selected_driver_name, selected_driver_car, selected_time)
                         await bot.send_message(
                             time_message.from_user.id,
                             f"You selected route: {selected_route}, driver: {selected_driver_name}, time: {selected_time}")
-                        insert_driver_for_route(
-                            selected_route, selected_driver_name, selected_driver_car, selected_time)
             else:
                 await bot.send_message(message.from_user.id, "No drivers found for this route.")
     except Exception as e:
-        logging.error(f"Error in distribute_route: {str(e)}")
+        await bot.send_message(query.from_user.id, f"Произошла ошибка: {e}")
 
 
 @dp.message_handler(lambda message: message.text.isdigit())
