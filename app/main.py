@@ -764,6 +764,12 @@ async def show_daily_report_excel(call: CallbackQuery):
     await call.answer()
 
 
+async def on_startup(dispatcher):
+    database.tunnel.start()
+
+
+async def on_shutdown(dispatcher):
+    database.tunnel.stop()
 
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup, on_shutdown=on_shutdown)
