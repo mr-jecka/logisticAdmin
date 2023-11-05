@@ -163,7 +163,7 @@ async def input_reestr(message: types.Message, state: FSMContext):
             formatted_message += f"Total Count Boxes: {th['total_count_boxes']}\n"
             formatted_message += f"Total Weight: {th['total_weight']}\n\n"
 
-        status, response_message = database.insert_excel_to_db("reestr.xlsx", database.conn)
+        status, response_message = database.insert_excel_to_db("reestr.xlsx", database.get_db_connection())
         await message.answer(response_message)
         await state.finish()
     else:
