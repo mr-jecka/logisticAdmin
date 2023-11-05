@@ -3,25 +3,64 @@ import os
 import openpyxl
 import requests
 import logging
-from datetime import datetime
 import uuid
+from sshtunnel import SSHTunnelForwarder
+from contextlib import contextmanager
+from datetime import datetime
 
+# Параметры подключения к БД
+user = os.getenv('POSTGRES_USER', 'postgres')
+password = os.getenv('POSTGRES_PASSWORD', 'postgres')
+database = os.getenv('POSTGRES_DB', 'postgres')
+db_port = os.getenv('POSTGRES_PORT_NUMBER', "5432")
 
-user = os.getenv('POSTGRES_USER', 'bank_user')
-password = os.getenv('POSTGRES_PASSWORD', 'bank_password')
-host = os.getenv('POSTGRES_HOST', 'localhost')
-#host = os.getenv('POSTGRES_HOST', '194.87.92.15')
-port = os.getenv('POSTGRES_PORT_NUMBER', "5432")
-database = os.getenv('POSTGRES_DB', 'bank')
+# Параметры SSH туннеля
+REMOTE_HOST = os.getenv('SSH_REMOTE_HOST')
+REMOTE_SSH_PORT = os.getenv('SSH_REMOTE_PORT', 22)
+REMOTE_USERNAME = os.getenv('SSH_USER')
+REMOTE_PASSWORD = os.getenv('SSH_PASSWORD')
+LOCAL_BIND_HOST = os.getenv('SSH_LOCAL_BIND_HOST', 'localhost')
+LOCAL_BIND_PORT = os.getenv('SSH_LOCAL_BIND_PORT', 5432)
 
-conn = {
-    'user': user,
-    'password': password,
-    'host': host,
-    'port': port,
-    'database': database
-}
+tunnel = SSHTunnelForwarder(  # Инициализация SSH туннеля
+    (REMOTE_HOST, int(REMOTE_SSH_PORT)),
+    ssh_username=REMOTE_USERNAME,
+    ssh_password=REMOTE_PASSWORD,
+    remote_bind_address=('localhost', int(db_port)),
+    local_bind_address=(LOCAL_BIND_HOST, int(LOCAL_BIND_PORT)))
 
+@contextmanager
+def get_db_connection():  # Функция-генератор для управления соединениями
+    if not tunnel.is_active:
+        tunnel.start()
+    conn_params = {
+        'database': database,
+        'user': user,
+        'password': password,
+        'host': LOCAL_BIND_HOST,
+        'port': tunnel.local_bind_port
+    }
+    conn = psycopg2.connect(**conn_params)
+    try:
+        yield conn
+    finally:
+        conn.close()
+        tunnel.stop()
+
+def get_info_for_report():
+    with get_db_connection() as connection:
+        today = datetime.now().date()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT num_th, lastname, num_car, arrival_time_fact, shipment_time, departure_time, arrival_time FROM public.reestr_table WHERE date_th = %s",
+                (today,))
+            routes = cursor.fetchall()
+            return routes
+        except (Exception, psycopg2.Error) as error:
+            print("Error fetching routes from the database:", error)
+        finally:
+            cursor.close()
 
 def get_routes():
     connection = psycopg2.connect(**conn)
@@ -40,21 +79,21 @@ def get_routes():
             connection.close()
 
 
-def get_info_for_report():
-    connection = psycopg2.connect(**conn)
-    today = datetime.now().date()
-    try:
-        cursor = connection.cursor()
-        cursor.execute("SELECT num_th, lastname, num_car, arrival_time_fact, shipment_time, departure_time, arrival_time FROM public.reestr_table WHERE date_th = %s",
-                       (today,))
-        routes = cursor.fetchall()
-        return routes
-    except (Exception, psycopg2.Error) as error:
-        print("Error fetching routes from the database:", error)
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
+#def get_info_for_report():
+#    connection = psycopg2.connect(**conn)
+#    today = datetime.now().date()
+#    try:
+#        cursor = connection.cursor()
+#        cursor.execute("SELECT num_th, lastname, num_car, arrival_time_fact, shipment_time,# departure_time, arrival_time FROM public.reestr_table WHERE date_th = %s",
+#                       (today,))
+#        routes = cursor.fetchall()
+#        return routes
+#    except (Exception, psycopg2.Error) as error:
+#        print("Error fetching routes from the database:", error)
+#    finally:
+#        if connection:
+#            cursor.close()
+#            connection.close()
 
 
 def get_driver_last_name(driver_id):
@@ -92,7 +131,6 @@ def insert_driver_for_route(selected_route, selected_driver, selected_driver_car
             cursor.close()
             connection.close()
 
-import psycopg2
 
 def get_main_json():
     try:
