@@ -196,6 +196,10 @@ async def parsed_reestr(excel_file_path):
             addr["code_tt"] = row[7]
             addr["address_delivery"] = row[8]
             addr["count_boxes"] = int(row[9])
+            if row[9] is not None:
+                addr["count_boxes"] = int(row[9])
+            else:
+                addr["count_boxes"] = 0
             addr["weight"] = float(row[10])
             th["addresses"].append(addr)
     ths.append(th)
