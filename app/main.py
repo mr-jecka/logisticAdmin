@@ -163,7 +163,7 @@ async def input_reestr(message: types.Message, state: FSMContext):
             formatted_message += f"Total Count Boxes: {th['total_count_boxes']}\n"
             formatted_message += f"Total Weight: {th['total_weight']}\n\n"
 
-        status, response_message = database.insert_excel_to_db("reestr.xlsx", database.get_db_connection())
+        status, response_message = database.insert_excel_to_db("reestr.xlsx", database.conn)
         await message.answer(response_message)
         await state.finish()
     else:
@@ -196,10 +196,6 @@ async def parsed_reestr(excel_file_path):
             addr["code_tt"] = row[7]
             addr["address_delivery"] = row[8]
             addr["count_boxes"] = int(row[9])
-            if row[9] is not None:
-                addr["count_boxes"] = int(row[9])
-            else:
-                addr["count_boxes"] = 0
             addr["weight"] = float(row[10])
             th["addresses"].append(addr)
     ths.append(th)
@@ -768,12 +764,6 @@ async def show_daily_report_excel(call: CallbackQuery):
     await call.answer()
 
 
-async def on_startup(dispatcher):
-    database.tunnel.start()
-
-
-async def on_shutdown(dispatcher):
-    database.tunnel.stop()
 
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True, on_startup=on_startup, on_shutdown=on_shutdown)
+    executor.start_polling(dp, skip_updates=True)
