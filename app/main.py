@@ -718,7 +718,7 @@ async def show_daily_report_excel(call: CallbackQuery):
     header_data = [
         ('Погрузка и доставка продукции по ТТ',),
         (f'Дата: {current_date}',),
-        ('Номер авто', 'Водитель', 'Время\n прибытия', 'Время\nпогрузки', 'Время\nвыезда',
+        ('Номер авто', 'Водитель', 'Время\n прибытия', 'Время начала\nпогрузки', 'Время\nвыезда',
          'Время прибытия\nпо регламенту', 'Опоздание', 'Простой', 'Время\nпогрузки', 'Цель\nвъезда/выезда')
     ]
 
@@ -733,8 +733,10 @@ async def show_daily_report_excel(call: CallbackQuery):
          row[6].strftime('%H:%M') if row[6] else '',  # arrival_time
          str((datetime.combine(datetime.min, row[3]) - datetime.combine(
                  datetime.min, row[6])).seconds // 60) + ' мин' if row[3] and row[6] and row[3] > row[6] else '',  # Опоздание
-         str((datetime.combine(datetime.min, row[4]) - datetime.combine(
-             datetime.min, row[3])).seconds // 60) + ' мин' if row[3] and row[4] else '',  # Простой
+         str((datetime.combine(datetime.min, row[6]) - datetime.combine(
+             datetime.min, row[4])).seconds // 60 * -1) + ' мин' if row[6] and row[4] and row[4] < row[6] else (
+             str((datetime.combine(datetime.min, row[4]) - datetime.combine(
+                 datetime.min, row[6])).seconds // 60) + ' мин' if row[6] and row[4] else ''),  # Простой
          str((datetime.combine(datetime.min, row[5]) - datetime.combine(
              datetime.min, row[4])).seconds // 60) + ' мин' if row[4] and row[5] else '',  # Время погрузки
          'погрузка'  # Цель въезда/выезда

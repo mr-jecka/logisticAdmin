@@ -92,7 +92,6 @@ def insert_driver_for_route(selected_route, selected_driver, selected_driver_car
             cursor.close()
             connection.close()
 
-import psycopg2
 
 def get_main_json():
     try:
@@ -102,7 +101,7 @@ def get_main_json():
         def fetch_addresses(num_th, is_null):
             condition = "IS NULL" if is_null else "IS NOT NULL"
             cursor.execute(
-                f"SELECT * FROM public.address_table WHERE num_th = %s AND arrival_date {condition} ORDER BY arrival_date ASC",
+                f"SELECT * FROM public.address_table WHERE num_th = %s AND arrival_time {condition} ORDER BY arrival_time ASC",
                 (num_th,))
             return cursor.fetchall()
 
@@ -159,7 +158,6 @@ def get_main_json():
 #         if connection:
 #             cursor.close()
 #             connection.close()
-
 
 
 def update_driver_assignment(driver_id, selected_route):
@@ -257,24 +255,12 @@ def insert_excel_to_db(excel_file_path, db_params):
                     th_id = cursor.fetchone()[0]
 
                     for addr in th["addresses"]:
-                        #coordinates = revers_geocoding_yandex(addr["address_delivery"])
-                        # if coordinates:
-                        #     addr["latitude"], addr["longitude"] = coordinates
-                        #     cursor.execute("""
-                        #         INSERT INTO address_table (
-                        #         num_th, num_route, num_shop, code_tt, address_delivery, count_boxes, weight, th_id, latitude, longitude)
-                        #         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                        #     """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"], addr["address_delivery"],
-                        #           addr["count_boxes"],
-                        #           addr["weight"], th_id, addr["latitude"], addr["longitude"]))
-                        # else:
                         cursor.execute("""
                             INSERT INTO address_table (
-                            num_th, num_route, num_shop, code_tt, address_delivery, count_boxes, weight, th_id, latitude, longitude)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                        """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"], addr["address_delivery"],
-                              addr["count_boxes"],
-                              addr["weight"], th_id, None, None))
+                            num_th, num_route, num_shop, code_tt, address_delivery, count_boxes, weight, th_id)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+                        """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
+                              addr["address_delivery"], addr["count_boxes"], addr["weight"], th_id))
                         new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
                         new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
                         print("New UUID in reestr_table:", new_uuid_in_reestr)
