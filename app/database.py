@@ -210,10 +210,12 @@ def insert_excel_to_db(excel_file_path, db_params):
         logging.error(f"Error connecting to the database: {e}")
         return
     try:
-        ths = []
         wb = openpyxl.load_workbook(excel_file_path, data_only=True)
         sheet = wb.active
+
+        ths = []
         th = {}
+        index_number = 0  # Счётчик для порядкового номера
 
         for row in sheet.iter_rows(min_row=5, values_only=True):
             if row[2] is not None:
@@ -232,7 +234,9 @@ def insert_excel_to_db(excel_file_path, db_params):
                 th["total_count_boxes"] = int(row[9])
                 th["total_weight"] = float(row[10])
                 th["addresses"] = []
+                index_number = 0  # Обнуление счётчика при новом "Номере ТН"
             else:
+                index_number += 1  # Увеличение порядкового номера для "Номера перемещения"
                 addr = {}
                 addr["num_th"] = th["num_th"]
                 addr["num_route"] = row[4]
@@ -241,6 +245,7 @@ def insert_excel_to_db(excel_file_path, db_params):
                 addr["address_delivery"] = row[8]
                 addr["count_boxes"] = int(row[9])
                 addr["weight"] = float(row[10])
+                addr["index_number"] = index_number  # Добавление порядкового номера
                 th["addresses"].append(addr)
         ths.append(th)
 
@@ -257,10 +262,11 @@ def insert_excel_to_db(excel_file_path, db_params):
                     for addr in th["addresses"]:
                         cursor.execute("""
                             INSERT INTO address_table (
-                            num_th, num_route, num_shop, code_tt, address_delivery, count_boxes, weight, th_id)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+                            num_th, num_route, num_shop, code_tt, address_delivery,
+                             index_number, count_boxes, weight, th_id)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
                         """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
-                              addr["address_delivery"], addr["count_boxes"], addr["weight"], th_id))
+                              addr["address_delivery"], addr["index_number"], addr["count_boxes"], addr["weight"], th_id))
                         new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
                         new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
                         print("New UUID in reestr_table:", new_uuid_in_reestr)
@@ -274,23 +280,23 @@ def insert_excel_to_db(excel_file_path, db_params):
         conn.close()
 
 
-def revers_geocoding_yandex(address):
-    token = '5d9f623c-b003-4632-956f-464db92caaae'
-    headers = {"Accept-Language": "ru"}
-    response = requests.get(
-        f'https://geocode-maps.yandex.ru/1.x/?apikey={token}&geocode={address}&format=json',
-        headers=headers).json()
-    if (
-            "response" in response
-            and "GeoObjectCollection" in response["response"]
-            and "featureMember" in response["response"]["GeoObjectCollection"]
-    ):
-        geo_objects = response["response"]["GeoObjectCollection"]["featureMember"]
-        if geo_objects:
-            first_result = geo_objects[0]["GeoObject"]
-            latitude, longitude = map(float, first_result["Point"]["pos"].split())
-            return latitude, longitude
-    return None
+# def revers_geocoding_yandex(address):
+#     token = '5d9f623c-b003-4632-956f-464db92caaae'
+#     headers = {"Accept-Language": "ru"}
+#     response = requests.get(
+#         f'https://geocode-maps.yandex.ru/1.x/?apikey={token}&geocode={address}&format=json',
+#         headers=headers).json()
+#     if (
+#             "response" in response
+#             and "GeoObjectCollection" in response["response"]
+#             and "featureMember" in response["response"]["GeoObjectCollection"]
+#     ):
+#         geo_objects = response["response"]["GeoObjectCollection"]["featureMember"]
+#         if geo_objects:
+#             first_result = geo_objects[0]["GeoObject"]
+#             latitude, longitude = map(float, first_result["Point"]["pos"].split())
+#             return latitude, longitude
+#     return None
 
 
 def insert_scheduled_arrival(user_id, date_time_obj):
