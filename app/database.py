@@ -6,6 +6,8 @@ import logging
 from datetime import datetime
 import uuid
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 user = os.getenv('POSTGRES_USER', 'bank_user')
 password = os.getenv('POSTGRES_PASSWORD', 'bank_password')
@@ -76,20 +78,34 @@ def get_driver_last_name(driver_id):
 
 
 def insert_user_id_for_addresses(selected_route, user_id):
+    connection = None
+    cursor = None
     try:
         connection = psycopg2.connect(**conn)
         cursor = connection.cursor()
-        cursor.execute(
-            f"UPDATE public.address_table SET selected_route = %s, user_id = %s WHERE user_id IS NULL",
-            (user_id))
+        update_query = """
+        UPDATE public.address_table
+        SET user_id = %s
+        WHERE num_th = %s AND user_id IS NULL;
+        """
+        cursor.execute(update_query, (user_id, selected_route))
+        updated_rows = cursor.rowcount  # Количество обновленных строк
         connection.commit()
-    except (Exception, psycopg2.Error) as error:
-        print("Error updating reestr_table in the database:", error)
-        connection.rollback()
-    finally:
+        if updated_rows > 0:
+            logger.info(f"User ID {user_id} присвоен для маршрута {selected_route}. Обновлено записей: {updated_rows}")
+        else:
+            logger.warning(f"Нет записей для обновления user_id для маршрута {selected_route}")
+    except Exception as e:
+        logger.exception("Ошибка при обновлении user_id в адресной таблице:")
         if connection:
+            connection.rollback()
+    finally:
+        if cursor:
             cursor.close()
+        if connection:
             connection.close()
+
+
 
 
 def insert_driver_for_route(selected_route, selected_driver, selected_driver_car, loading_time, user_id):

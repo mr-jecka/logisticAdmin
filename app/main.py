@@ -20,6 +20,8 @@ from datetime import datetime, timedelta
 import database
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
 #TOKEN = "6489569901:AAHBPmIvgYsxj_M_p6x9FnG_RThYEBthcRc" #@MoveTrafficBot
 
@@ -34,8 +36,8 @@ class EnterForm(StatesGroup):
     waiting_for_shipment = State()
     waiting_for_departure = State()
     waiting_for_reestr = State()
-    waiting_for_routes = State()
-    waiting_for_driver = State()
+    #waiting_for_routes = State()
+    #waiting_for_driver = State()
 
 
 nav.init(dp)
@@ -68,61 +70,229 @@ def update_excel_with_route_driver_car(selected_route, selected_driver_name, sel
     wb.save('reestr.xlsx')
 
 
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+
+class RouteSelection(StatesGroup):
+    waiting_for_route = State()
+    waiting_for_driver = State()
+    waiting_for_time = State()
+
+
 @dp.callback_query_handler(text="distribute_routes")
-async def distribute_route(query: types.CallbackQuery):
+async def start_distribute_route(query: types.CallbackQuery):
+    await bot.send_message(query.from_user.id, "Распределите маршруты между водителями")
+    tomorrow_routes = get_routes()
+    if not tomorrow_routes:
+        await bot.send_message(query.from_user.id, "Не найдены маршруты на завтра")
+        return
+
+    route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
+    await bot.send_message(query.from_user.id, "Выберете маршрут:", reply_markup=keyboard)
+    await RouteSelection.waiting_for_route.set()
+
+
+@dp.message_handler(state=RouteSelection.waiting_for_route)
+async def handle_route_choice(message: types.Message, state: FSMContext):
+    selected_route = message.text
+    await state.update_data(selected_route=selected_route)
+
+    all_drivers = get_drivers_for_route()
+
+    if not all_drivers:
+        await bot.send_message(message.from_user.id, "Водители не найдены")
+        return
+
+    driver_buttons = [KeyboardButton(driver[0]) for driver in all_drivers]
+    driver_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*driver_buttons)
+    await bot.send_message(message.from_user.id, "Выберете водителя:", reply_markup=driver_keyboard)
+    await RouteSelection.waiting_for_driver.set()
+
+
+@dp.message_handler(state=RouteSelection.waiting_for_driver)
+async def handle_driver_choice(message: types.Message, state: FSMContext):
+    selected_driver = message.text
+    await state.update_data(selected_driver=selected_driver)
+    loading_times = ["3:00", "3:30", "4:00", "4:30", "5:00", "5:30", "6:00", "6:30", "7:00"]
+    time_buttons = [KeyboardButton(time) for time in loading_times]
+    time_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*time_buttons)
+    await bot.send_message(message.from_user.id, "Какое время подачи на погрузку?", reply_markup=time_keyboard)
+    await RouteSelection.waiting_for_time.set()
+
+
+@dp.message_handler(state=RouteSelection.waiting_for_time)
+async def handle_loading_time_choice(message: types.Message, state: FSMContext):
+    selected_time = message.text
+    logger.info(f"Выбранное время: {selected_time}")
+
+    user_data = await state.get_data()
+    selected_route = user_data['selected_route']
+    selected_driver = user_data['selected_driver']
+
+    logger.info(f"Извлеченные данные из состояния: маршрут - {selected_route}, водитель - {selected_driver}")
+
+    all_drivers = get_drivers_for_route()
+    logger.info(f"Получен список водителей: {all_drivers}")
+
+    driver_to_car = {driver[0]: driver[1] for driver in all_drivers}
+    driver_to_user_id = {driver[0]: driver[2] for driver in all_drivers}
+
+    selected_driver_car = driver_to_car.get(selected_driver)
+    selected_driver_user_id = driver_to_user_id.get(selected_driver)
+
+    if not selected_driver_car or not selected_driver_user_id:
+        logger.error("Не найдена информация о машине или user_id водителя.")
+        await bot.send_message(message.from_user.id, "Информация о водителе или его машине не найдена.")
+        return
+
+    logger.info(f"Выбранный автомобиль водителя: {selected_driver_car}")
+    logger.info(f"User ID выбранного водителя: {selected_driver_user_id}")
+
     try:
-        await bot.send_message(query.from_user.id, "Распределите маршруты между водителями")
-        tomorrow_routes = get_routes()
-        if tomorrow_routes:
-            route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
-            await bot.send_message(query.from_user.id, "Выберете маршрут:", reply_markup=keyboard)
-        else:
-            await bot.send_message(query.from_user.id, "Не найдены маршруты на завтра")
-
-        @dp.message_handler(lambda message: message.text in [route[0] for route in tomorrow_routes])
-        async def handle_route_choice(message: types.Message):
-            selected_route = message.text
-            await bot.send_message(message.from_user.id, "You selected route: " + selected_route)
-            all_drivers = get_drivers_for_route()
-            if all_drivers:
-                all_drivers_dict = {driver[0]: driver[1] for driver in all_drivers}
-                driver_buttons = [KeyboardButton(driver[0]) for driver in all_drivers]
-
-                driver_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*driver_buttons)
-                await bot.send_message(message.from_user.id, "Select a driver:", reply_markup=driver_keyboard)
-
-                @dp.message_handler(lambda message: message.text in [driver[0] for driver in all_drivers])
-                async def handle_driver_choice(driver_message: types.Message):
-                    nonlocal selected_route
-                    selected_driver_name = driver_message.text
-                    selected_driver_car = all_drivers_dict[selected_driver_name]
-                    await bot.send_message(
-                        driver_message.from_user.id,
-                        f"You selected route: {selected_route}, driver: {selected_driver_name}")
-
-                    loading_times = ["3:00", "3:30", "4:00", "4:30", "5:00", "5:30", "6:00", "6:30", "7:00"]
-                    time_buttons = [KeyboardButton(time) for time in loading_times]
-                    time_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*time_buttons)
-                    await bot.send_message(driver_message.from_user.id, "Какое время подачи на погрузку?",
-                                           reply_markup=time_keyboard)
-
-                    @dp.message_handler(lambda message: message.text in loading_times)
-                    async def handle_loading_time_choice(time_message: types.Message):
-                        selected_time = time_message.text
-                        user_id = time_message.from_user.id
-                        insert_driver_for_route(
-                            selected_route, selected_driver_name, selected_driver_car, selected_time, user_id)
-                        #insert_user_id_for_addresses(selected_route, user_id)
-                        update_excel_with_route_driver_car(
-                            selected_route, selected_driver_name, selected_driver_car, selected_time)
-                        await bot.send_message(
-                            time_message.from_user.id,
-                            f"You selected route: {selected_route}, driver: {selected_driver_name}, time: {selected_time}")
-            else:
-                await bot.send_message(message.from_user.id, "No drivers found for this route.")
+        insert_driver_for_route(selected_route, selected_driver, selected_driver_car, selected_time, selected_driver_user_id)
+        logger.info("Водитель добавлен к маршруту успешно.")
     except Exception as e:
-        await bot.send_message(query.from_user.id, f"Произошла ошибка: {e}")
+        logger.exception("Ошибка при добавлении водителя к маршруту:")
+        await bot.send_message(message.from_user.id, "Произошла ошибка при добавлении водителя к маршруту.")
+        return
+
+    try:
+        insert_user_id_for_addresses(selected_route, selected_driver_user_id)  # Обновление user_id в адресной таблице
+        logger.info(f"User ID водителя обновлен для адресов маршрута {selected_route}.")
+    except Exception as e:
+        logger.exception("Ошибка при обновлении user_id в адресной таблице:")
+        await bot.send_message(message.from_user.id, "Произошла ошибка при обновлении user_id в адресах.")
+        return
+
+
+    try:
+        update_excel_with_route_driver_car(selected_route, selected_driver, selected_driver_car, selected_time)
+        logger.info("Excel файл обновлен успешно.")
+    except Exception as e:
+        logger.exception("Ошибка при обновлении Excel файла:")
+        await bot.send_message(message.from_user.id, "Произошла ошибка при обновлении файла Excel.")
+        return
+
+    await bot.send_message(
+        message.from_user.id,
+        f"Маршруту {selected_route} присвоен водитель {selected_driver} с машиной {selected_driver_car} и временем прибытия {selected_time}"
+    )
+    logger.info("Сообщение пользователю отправлено.")
+    await state.finish()
+
+
+# @dp.message_handler(state=RouteSelection.waiting_for_time)
+# async def handle_loading_time_choice(message: types.Message, state: FSMContext):
+#     selected_time = message.text
+#     logger.info(f"Выбранное время: {selected_time}")
+#
+#     user_data = await state.get_data()
+#     selected_route = user_data.get('selected_route', 'Не найден')
+#     selected_driver = user_data.get('selected_driver', 'Не найден')
+#
+#     logger.info(f"Извлеченные данные из состояния: маршрут - {selected_route}, водитель - {selected_driver}")
+#
+#     user_id = message.from_user.id
+#     logger.info(f"ID пользователя: {user_id}")
+#
+#     all_drivers = get_drivers_for_route()
+#     logger.info(f"Получен список водителей: {all_drivers}")
+#
+#     try:
+#         all_drivers_dict = {driver[0]: driver[1] for driver in all_drivers}
+#         selected_driver_car = all_drivers_dict.get(selected_driver)
+#         logger.info(f"Автомобиль выбранного водителя: {selected_driver_car}")
+#     except Exception as e:
+#         logger.exception("Ошибка при обработке данных водителей:")
+#         raise e
+#
+#     if selected_driver_car is None:
+#         logger.error("Автомобиль для водителя не найден.")
+#         await bot.send_message(message.from_user.id, "Информация о машине водителя не найдена.")
+#         return
+#
+#     try:
+#         insert_driver_for_route(selected_route, selected_driver, selected_driver_car, selected_time, user_id)
+#         logger.info("Водитель добавлен к маршруту успешно.")
+#     except Exception as e:
+#         logger.exception("Ошибка при добавлении водителя к маршруту:")
+#
+#     try:
+#         update_excel_with_route_driver_car(selected_route, selected_driver, selected_driver_car, selected_time)
+#         logger.info("Excel файл обновлен успешно.")
+#     except Exception as e:
+#         logger.exception("Ошибка при обновлении Excel файла:")
+#
+#     await bot.send_message(
+#         message.from_user.id,
+#         f"Маршруту {selected_route} присвоен водитель {selected_driver} и время прибытия {selected_time}"
+#     )
+#     logger.info("Сообщение пользователю отправлено.")
+#     await state.finish()
+
+
+
+
+
+
+
+
+# @dp.callback_query_handler(text="distribute_routes")
+# async def distribute_route(query: types.CallbackQuery):
+#     try:
+#         await bot.send_message(query.from_user.id, "Распределите маршруты между водителями")
+#         tomorrow_routes = get_routes()
+#         if tomorrow_routes:
+#             route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
+#             keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
+#             await bot.send_message(query.from_user.id, "Выберете маршрут:", reply_markup=keyboard)
+#         else:
+#             await bot.send_message(query.from_user.id, "Не найдены маршруты на завтра")
+#
+#         @dp.message_handler(lambda message: message.text in [route[0] for route in tomorrow_routes])
+#         async def handle_route_choice(message: types.Message):
+#             selected_route = message.text
+#             await bot.send_message(message.from_user.id, "You selected route: " + selected_route)
+#             all_drivers = get_drivers_for_route()
+#             if all_drivers:
+#                 all_drivers_dict = {driver[0]: driver[1] for driver in all_drivers}
+#                 driver_buttons = [KeyboardButton(driver[0]) for driver in all_drivers]
+#
+#                 driver_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*driver_buttons)
+#                 await bot.send_message(message.from_user.id, "Select a driver:", reply_markup=driver_keyboard)
+#
+#                 @dp.message_handler(lambda message: message.text in [driver[0] for driver in all_drivers])
+#                 async def handle_driver_choice(driver_message: types.Message):
+#                     nonlocal selected_route
+#                     selected_driver_name = driver_message.text
+#                     selected_driver_car = all_drivers_dict[selected_driver_name]
+#                     await bot.send_message(
+#                         driver_message.from_user.id,
+#                         f"You selected route: {selected_route}, driver: {selected_driver_name}")
+#
+#                     loading_times = ["3:00", "3:30", "4:00", "4:30", "5:00", "5:30", "6:00", "6:30", "7:00"]
+#                     time_buttons = [KeyboardButton(time) for time in loading_times]
+#                     time_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*time_buttons)
+#                     await bot.send_message(driver_message.from_user.id, "Какое время подачи на погрузку?",
+#                                            reply_markup=time_keyboard)
+#
+#                     @dp.message_handler(lambda message: message.text in loading_times)
+#                     async def handle_loading_time_choice(time_message: types.Message):
+#                         selected_time = time_message.text
+#                         user_id = time_message.from_user.id
+#                         insert_driver_for_route(
+#                             selected_route, selected_driver_name, selected_driver_car, selected_time, user_id)
+#                         #insert_user_id_for_addresses(selected_route, user_id)
+#                         update_excel_with_route_driver_car(
+#                             selected_route, selected_driver_name, selected_driver_car, selected_time)
+#                         await bot.send_message(
+#                             time_message.from_user.id,
+#                             f"You selected route: {selected_route}, driver: {selected_driver_name}, time: {selected_time}")
+#             else:
+#                 await bot.send_message(message.from_user.id, "No drivers found for this route.")
+#     except Exception as e:
+#         await bot.send_message(query.from_user.id, f"Произошла ошибка: {e}")
 
 
 @dp.message_handler(lambda message: message.text.isdigit())
