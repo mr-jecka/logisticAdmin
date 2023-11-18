@@ -75,13 +75,30 @@ def get_driver_last_name(driver_id):
             connection.close()
 
 
-def insert_driver_for_route(selected_route, selected_driver, selected_driver_car, loading_time):
+def insert_user_id_for_addresses(selected_route, user_id):
     try:
         connection = psycopg2.connect(**conn)
         cursor = connection.cursor()
         cursor.execute(
-            f"UPDATE public.reestr_table SET lastname = %s, num_car = %s, arrival_time = %s WHERE num_th = %s",
-            (selected_driver, selected_driver_car, loading_time, selected_route)
+            f"UPDATE public.address_table SET selected_route = %s, user_id = %s WHERE user_id IS NULL",
+            (user_id))
+        connection.commit()
+    except (Exception, psycopg2.Error) as error:
+        print("Error updating reestr_table in the database:", error)
+        connection.rollback()
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+
+def insert_driver_for_route(selected_route, selected_driver, selected_driver_car, loading_time, user_id):
+    try:
+        connection = psycopg2.connect(**conn)
+        cursor = connection.cursor()
+        cursor.execute(
+            f"UPDATE public.reestr_table SET lastname = %s, num_car = %s, arrival_time = %s, user_id = %s WHERE num_th = %s",
+            (selected_driver, selected_driver_car, loading_time, user_id, selected_route)
         )
         connection.commit()
     except (Exception, psycopg2.Error) as error:
@@ -179,7 +196,7 @@ def get_drivers_for_route():
     try:
         connection = psycopg2.connect(**conn)
         cursor = connection.cursor()
-        cursor.execute("SELECT last_name, num_car FROM public.drivers WHERE user_id IS NOT NULL")
+        cursor.execute("SELECT last_name, num_car, user_id FROM public.drivers WHERE user_id IS NOT NULL")
         drivers = cursor.fetchall()
         return drivers
     except (Exception, psycopg2.Error) as error:

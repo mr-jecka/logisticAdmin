@@ -6,7 +6,7 @@ import markup as nav
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from database import get_drivers_for_route, get_internal_report, get_routes,\
-    insert_driver_for_route, get_main_json, get_info_for_report
+    insert_driver_for_route, get_main_json, get_info_for_report, insert_user_id_for_addresses
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
 from logger import logging
@@ -110,8 +110,10 @@ async def distribute_route(query: types.CallbackQuery):
                     @dp.message_handler(lambda message: message.text in loading_times)
                     async def handle_loading_time_choice(time_message: types.Message):
                         selected_time = time_message.text
+                        user_id = time_message.from_user.id
                         insert_driver_for_route(
-                            selected_route, selected_driver_name, selected_driver_car, selected_time)
+                            selected_route, selected_driver_name, selected_driver_car, selected_time, user_id)
+                        #insert_user_id_for_addresses(selected_route, user_id)
                         update_excel_with_route_driver_car(
                             selected_route, selected_driver_name, selected_driver_car, selected_time)
                         await bot.send_message(
