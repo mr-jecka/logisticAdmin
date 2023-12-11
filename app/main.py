@@ -1,25 +1,26 @@
+import tempfile
 from openpyxl import Workbook
-from decimal import Decimal
-import json
 from aiogram import Bot, Dispatcher, executor, types
 import markup as nav
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from database import get_drivers_for_route, get_internal_report, get_routes,\
-    insert_driver_for_route, get_main_json, get_info_for_report, insert_user_id_for_addresses
+from database import get_drivers_for_route, get_routes, insert_driver_for_route, get_optimal_json, \
+    get_main_json, get_info_for_report, insert_user_id_for_addresses, get_main_json_14, update_index_numbers
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
-from logger import logging
+import logging
 from aiogram import types
-import os
-from openpyxl.styles import Alignment
-from aiogram.types import InputFile
 from PIL import Image, ImageDraw, ImageFont
-import openpyxl
-from datetime import datetime, timedelta
 import database
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment
 
-logging.basicConfig(level=logging.INFO)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%d-%b-%y %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
@@ -50,10 +51,10 @@ async def start(message: types.Message):
     logging.info(f"User {message.from_user.username} {message.from_user.id} started the bot.")
 
 
-@dp.callback_query_handler(text="inputBD")
-async def address(message: types.Message):
-    await bot.send_message(message.from_user.id, "Предоставьте мне файл reestr.xlsx:")
-    await EnterForm.waiting_for_reestr.set()
+@dp.callback_query_handler(text="Cancel")
+async def cancel_handler(callback_query: types.CallbackQuery):
+    await bot.send_message(callback_query.from_user.id, "Галя, у нас отмена!")
+    await start(callback_query.message)
 
 
 def update_excel_with_route_driver_car(selected_route, selected_driver_name, selected_driver_car, selected_time):
@@ -70,19 +71,35 @@ def update_excel_with_route_driver_car(selected_route, selected_driver_name, sel
     wb.save('reestr.xlsx')
 
 
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
-
 class RouteSelection(StatesGroup):
     waiting_for_route = State()
     waiting_for_driver = State()
     waiting_for_time = State()
 
 
+@dp.callback_query_handler(text="optimalRoute")
+async def start_distribute_route(query: types.CallbackQuery):
+    await bot.send_message(query.from_user.id, "Строим оптимальные маршруты на завтра")
+    today = datetime.now().date()
+    tomorrow = today + timedelta(days=1)
+    tomorrow_routes = update_index_numbers(tomorrow)
+    if not tomorrow_routes:
+        await bot.send_message(query.from_user.id, "Не найдены маршруты на завтра")
+        return
+
+
 @dp.callback_query_handler(text="distribute_routes")
 async def start_distribute_route(query: types.CallbackQuery):
-    await bot.send_message(query.from_user.id, "Распределите маршруты между водителями")
-    tomorrow_routes = get_routes()
+    await bot.send_message(
+        query.from_user.id, "Вы хотите распределить маршруты на сегодня или на завтра ?", reply_markup=nav.mainMenu2)
+
+
+@dp.callback_query_handler(text="distr_tomorrow")
+async def start_distribute_tomorrow_routes(query: types.CallbackQuery):
+    await bot.send_message(query.from_user.id, "Распределение маршрутов на завтра...")
+    today = datetime.now().date()
+    tomorrow = today + timedelta(days=1)
+    tomorrow_routes = get_routes(tomorrow)
     if not tomorrow_routes:
         await bot.send_message(query.from_user.id, "Не найдены маршруты на завтра")
         return
@@ -90,6 +107,22 @@ async def start_distribute_route(query: types.CallbackQuery):
     route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
     await bot.send_message(query.from_user.id, "Выберете маршрут:", reply_markup=keyboard)
+    await RouteSelection.waiting_for_route.set()
+
+
+@dp.callback_query_handler(text="distr_today")
+async def start_distribute_today_routes(query: types.CallbackQuery):
+    await bot.send_message(query.from_user.id, "Распределение маршрутов на сегодня...")
+    today = datetime.now().date()
+    today_routes = get_routes(today)
+    if not today_routes:
+        await bot.send_message(query.from_user.id, "Не найдены маршруты на сегодня")
+        return
+
+    route_buttons = [KeyboardButton(route[0]) for route in today_routes]
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
+    await bot.send_message(query.from_user.id, "Выберете маршрут:", reply_markup=keyboard)
+
     await RouteSelection.waiting_for_route.set()
 
 
@@ -114,7 +147,7 @@ async def handle_route_choice(message: types.Message, state: FSMContext):
 async def handle_driver_choice(message: types.Message, state: FSMContext):
     selected_driver = message.text
     await state.update_data(selected_driver=selected_driver)
-    loading_times = ["3:00", "3:30", "4:00", "4:30", "5:00", "5:30", "6:00", "6:30", "7:00"]
+    loading_times = ["4:00", "4:30", "5:00", "5:30", "6:00", "6:30", "7:00", "7:30", "8:00"]
     time_buttons = [KeyboardButton(time) for time in loading_times]
     time_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*time_buttons)
     await bot.send_message(message.from_user.id, "Какое время подачи на погрузку?", reply_markup=time_keyboard)
@@ -165,134 +198,13 @@ async def handle_loading_time_choice(message: types.Message, state: FSMContext):
         await bot.send_message(message.from_user.id, "Произошла ошибка при обновлении user_id в адресах.")
         return
 
-
-    try:
-        update_excel_with_route_driver_car(selected_route, selected_driver, selected_driver_car, selected_time)
-        logger.info("Excel файл обновлен успешно.")
-    except Exception as e:
-        logger.exception("Ошибка при обновлении Excel файла:")
-        await bot.send_message(message.from_user.id, "Произошла ошибка при обновлении файла Excel.")
-        return
-
     await bot.send_message(
         message.from_user.id,
-        f"Маршруту {selected_route} присвоен водитель {selected_driver} с машиной {selected_driver_car} и временем прибытия {selected_time}"
-    )
+        f"Маршруту {selected_route} присвоен водитель {selected_driver} с машиной {selected_driver_car} и временем прибытия {selected_time}")
+    await bot.send_message(message.from_user.id, "Продолжим распределение маршрутов ?", reply_markup=nav.mainMenu2)
+
     logger.info("Сообщение пользователю отправлено.")
     await state.finish()
-
-
-# @dp.message_handler(state=RouteSelection.waiting_for_time)
-# async def handle_loading_time_choice(message: types.Message, state: FSMContext):
-#     selected_time = message.text
-#     logger.info(f"Выбранное время: {selected_time}")
-#
-#     user_data = await state.get_data()
-#     selected_route = user_data.get('selected_route', 'Не найден')
-#     selected_driver = user_data.get('selected_driver', 'Не найден')
-#
-#     logger.info(f"Извлеченные данные из состояния: маршрут - {selected_route}, водитель - {selected_driver}")
-#
-#     user_id = message.from_user.id
-#     logger.info(f"ID пользователя: {user_id}")
-#
-#     all_drivers = get_drivers_for_route()
-#     logger.info(f"Получен список водителей: {all_drivers}")
-#
-#     try:
-#         all_drivers_dict = {driver[0]: driver[1] for driver in all_drivers}
-#         selected_driver_car = all_drivers_dict.get(selected_driver)
-#         logger.info(f"Автомобиль выбранного водителя: {selected_driver_car}")
-#     except Exception as e:
-#         logger.exception("Ошибка при обработке данных водителей:")
-#         raise e
-#
-#     if selected_driver_car is None:
-#         logger.error("Автомобиль для водителя не найден.")
-#         await bot.send_message(message.from_user.id, "Информация о машине водителя не найдена.")
-#         return
-#
-#     try:
-#         insert_driver_for_route(selected_route, selected_driver, selected_driver_car, selected_time, user_id)
-#         logger.info("Водитель добавлен к маршруту успешно.")
-#     except Exception as e:
-#         logger.exception("Ошибка при добавлении водителя к маршруту:")
-#
-#     try:
-#         update_excel_with_route_driver_car(selected_route, selected_driver, selected_driver_car, selected_time)
-#         logger.info("Excel файл обновлен успешно.")
-#     except Exception as e:
-#         logger.exception("Ошибка при обновлении Excel файла:")
-#
-#     await bot.send_message(
-#         message.from_user.id,
-#         f"Маршруту {selected_route} присвоен водитель {selected_driver} и время прибытия {selected_time}"
-#     )
-#     logger.info("Сообщение пользователю отправлено.")
-#     await state.finish()
-
-
-
-
-
-
-
-
-# @dp.callback_query_handler(text="distribute_routes")
-# async def distribute_route(query: types.CallbackQuery):
-#     try:
-#         await bot.send_message(query.from_user.id, "Распределите маршруты между водителями")
-#         tomorrow_routes = get_routes()
-#         if tomorrow_routes:
-#             route_buttons = [KeyboardButton(route[0]) for route in tomorrow_routes]
-#             keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*route_buttons)
-#             await bot.send_message(query.from_user.id, "Выберете маршрут:", reply_markup=keyboard)
-#         else:
-#             await bot.send_message(query.from_user.id, "Не найдены маршруты на завтра")
-#
-#         @dp.message_handler(lambda message: message.text in [route[0] for route in tomorrow_routes])
-#         async def handle_route_choice(message: types.Message):
-#             selected_route = message.text
-#             await bot.send_message(message.from_user.id, "You selected route: " + selected_route)
-#             all_drivers = get_drivers_for_route()
-#             if all_drivers:
-#                 all_drivers_dict = {driver[0]: driver[1] for driver in all_drivers}
-#                 driver_buttons = [KeyboardButton(driver[0]) for driver in all_drivers]
-#
-#                 driver_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*driver_buttons)
-#                 await bot.send_message(message.from_user.id, "Select a driver:", reply_markup=driver_keyboard)
-#
-#                 @dp.message_handler(lambda message: message.text in [driver[0] for driver in all_drivers])
-#                 async def handle_driver_choice(driver_message: types.Message):
-#                     nonlocal selected_route
-#                     selected_driver_name = driver_message.text
-#                     selected_driver_car = all_drivers_dict[selected_driver_name]
-#                     await bot.send_message(
-#                         driver_message.from_user.id,
-#                         f"You selected route: {selected_route}, driver: {selected_driver_name}")
-#
-#                     loading_times = ["3:00", "3:30", "4:00", "4:30", "5:00", "5:30", "6:00", "6:30", "7:00"]
-#                     time_buttons = [KeyboardButton(time) for time in loading_times]
-#                     time_keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(*time_buttons)
-#                     await bot.send_message(driver_message.from_user.id, "Какое время подачи на погрузку?",
-#                                            reply_markup=time_keyboard)
-#
-#                     @dp.message_handler(lambda message: message.text in loading_times)
-#                     async def handle_loading_time_choice(time_message: types.Message):
-#                         selected_time = time_message.text
-#                         user_id = time_message.from_user.id
-#                         insert_driver_for_route(
-#                             selected_route, selected_driver_name, selected_driver_car, selected_time, user_id)
-#                         #insert_user_id_for_addresses(selected_route, user_id)
-#                         update_excel_with_route_driver_car(
-#                             selected_route, selected_driver_name, selected_driver_car, selected_time)
-#                         await bot.send_message(
-#                             time_message.from_user.id,
-#                             f"You selected route: {selected_route}, driver: {selected_driver_name}, time: {selected_time}")
-#             else:
-#                 await bot.send_message(message.from_user.id, "No drivers found for this route.")
-#     except Exception as e:
-#         await bot.send_message(query.from_user.id, f"Произошла ошибка: {e}")
 
 
 @dp.message_handler(lambda message: message.text.isdigit())
@@ -312,20 +224,41 @@ async def distribute_driver(message: types.Message, state: FSMContext):
         logging.error(f"Error in distribute_route: {str(e)}")
 
 
+@dp.callback_query_handler(text="inputBD")
+async def address(message: types.Message):
+
+    await bot.send_message(message.from_user.id, "Предоставьте мне Excel-файл")
+    await EnterForm.waiting_for_reestr.set()
+
+
 @dp.message_handler(content_types=types.ContentType.DOCUMENT, state=EnterForm.waiting_for_reestr)
 async def input_reestr(message: types.Message, state: FSMContext):
-    logging.info(f"Start input_reestr in BD")
-    if message.document.file_name.endswith('.xlsx'):
+    try:
+        logging.info("Start input_reestr in BD")
+        file_name = message.document.file_name
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+        new_file_name = f"reestr_{tomorrow.strftime('%d_%m')}.xlsx"
+
+        logging.info(f"Received file: {file_name}")
+
         file_id = message.document.file_id
         file_info = await bot.get_file(file_id)
         file_path = file_info.file_path
         downloaded_file = await bot.download_file(file_path)
-        with open("reestr.xlsx", "wb") as file:
-            file.write(downloaded_file.read())
 
-        await message.answer("Файл принят, начинаю запись в БД")
+        current_directory = os.getcwd()
+        path_to_save = os.path.join(current_directory, new_file_name)
+        logging.info(f"Renaming and saving the file to {path_to_save}")
 
-        ths = await parsed_reestr("reestr.xlsx")
+        with open(path_to_save, "wb") as file:
+            file.write(downloaded_file.getvalue())
+
+        logging.info(f"Файл сохранен -  {new_file_name}")
+
+        await message.answer(f"Файл принят и сохранён под именем {new_file_name}")
+
+        ths = await parsed_reestr(new_file_name)
 
         formatted_message = "Parsed transportation records:\n\n"
         for idx, th in enumerate(ths, start=1):
@@ -335,12 +268,16 @@ async def input_reestr(message: types.Message, state: FSMContext):
             formatted_message += f"Total Count Boxes: {th['total_count_boxes']}\n"
             formatted_message += f"Total Weight: {th['total_weight']}\n\n"
 
-        status, response_message = database.insert_excel_to_db("reestr.xlsx", database.conn)
+        status, response_message = database.insert_excel_to_db(path_to_save, database.conn)
         await message.answer(response_message)
         await state.finish()
-    else:
-        await message.answer("Предоставьте excel-файл (reestr.xlsx).")
-    await state.finish()
+
+        await message.answer(f"Обработка файла {new_file_name} успешно завершена.")
+
+    except Exception as e:
+        logging.error(f"An error occurred: {e}")
+        await message.answer("Произошла ошибка во время обработки файла.")
+        await state.finish()
 
 
 async def parsed_reestr(excel_file_path):
@@ -372,18 +309,6 @@ async def parsed_reestr(excel_file_path):
             th["addresses"].append(addr)
     ths.append(th)
     return ths
-
-
-# @dp.callback_query_handler(text="Report")
-# async def show_daily_report(call: CallbackQuery):
-#     report_date = datetime.now().date()
-#     daily_report = get_daily_report(report_date)
-#     report_message = "Daily Report for {}:\n".format(report_date)
-#     for row in daily_report:
-#         car_number, last_name, scheduled_arrival, actual_arrival, shipment, departure = row
-#         report_message += f"Номер машины: {car_number}, Фамилия: {last_name}, Прибытие по регламенту: {scheduled_arrival}, Прибытие фактическое: {actual_arrival}, Shipment: {shipment}, Departure: {departure}\n"
-#     await bot.send_message(call.from_user.id, report_message)
-#     await call.answer()
 
 
 @dp.callback_query_handler(text="Picture")
@@ -424,202 +349,244 @@ def date_handler(obj):
         raise TypeError("Object of type %s with value of %s is not JSON serializable" % (type(obj), repr(obj)))
 
 
+from collections import defaultdict
+
+
+def create_json_from_columns(file_path):
+    logging.info('Создание JSON из столбцов начато.')
+    data = defaultdict(list)
+
+    try:
+        wb = openpyxl.load_workbook(file_path)
+        sheet = wb.active
+        logging.info('Файл Excel успешно открыт.')
+    except Exception as e:
+        logging.error(f'Ошибка при открытии файла: {e}')
+        return
+
+    if not list(sheet.iter_rows(min_row=5, min_col=3, max_col=5, values_only=True)):
+        logging.warning('Нет данных в заданном диапазоне столбцов и строк.')
+
+    for idx, row in enumerate(sheet.iter_rows(min_row=5, min_col=3, max_col=5, values_only=True), start=5):
+        tn_value = row[0]
+        route_value = row[2]
+        if tn_value and route_value:
+            data[tn_value].append({'num_route': route_value, 'index_number': idx - 4})
+            logging.info(f'Добавлено значение: ТН {tn_value}, маршрут {route_value}, индекс {idx - 4}.')
+        else:
+            logging.warning(f'В строке {idx} отсутствует одно из необходимых значений.')
+
+    if not data:
+        logging.warning('Словарь данных пуст после обработки.')
+
+    logging.info('Создание JSON завершено.')
+    return {key: value for key, value in data.items()}
+
+
+def process_json_to_excel():
+    logging.basicConfig(level=logging.INFO)
+    logging.info("Начало обработки данных")
+
+    try:
+        with open('json.txt', 'r', encoding='utf-8') as json_file:
+            json_data = json.load(json_file)
+        logging.info("Данные JSON успешно загружены")
+    except Exception as e:
+        logging.error(f"Ошибка при чтении JSON: {e}")
+        return
+
+    try:
+        file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today)
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        logging.info("Excel-файл успешно открыт")
+    except Exception as e:
+        logging.error(f"Ошибка при открытии Excel-файла: {e}")
+        return
+
+    try:
+        current_th_row = 4
+        for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
+            if row[2]:
+                th = next((item for item in json_data if item['num_th'] == row[2]), None)
+                if th is not None and 'addresses' in th:
+                    current_row = current_th_row + 1
+                    for addr in th['addresses']:
+                        sheet.cell(row=current_row, column=5).value = addr['num_route']
+                        sheet.cell(row=current_row, column=7).value = addr['num_shop']
+                        sheet.cell(row=current_row, column=8).value = addr['code_tt']
+                        sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+                        sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+                        sheet.cell(row=current_row, column=11).value = addr['weight']
+                        current_row += 1
+                    current_th_row = current_row
+                else:
+                    current_th_row += 1
+        wb.save('reestr_modified.xlsx')
+        logging.info("Данные успешно записаны в Excel")
+    except Exception as e:
+        logging.error(f"Ошибка при обработке данных: {e}")
+
+
+def try_parse_time(time_str):
+    try:
+        return datetime.strptime(time_str, "%H:%M:%S").time()
+    except ValueError:
+        return None
+
+
+@dp.callback_query_handler(text="report14")
+async def show_today_report_14(call: CallbackQuery):
+    logging.info("Start show_today_report_14")
+
+    data = get_main_json_14()
+    print(data)
+
+    today = datetime.now().date()
+    file_name_today = f"reestr_{today.strftime('%d_%m')}.xlsx"
+
+    current_directory = os.getcwd()
+    path_to_open = os.path.join(current_directory, file_name_today)
+
+    try:
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        current_th_row = 4  # Заголовки находятся на 4-й строке
+
+        rows_to_delete = []
+        for row_num, row in enumerate(
+                sheet.iter_rows(min_row=current_th_row + 1, max_col=sheet.max_column, max_row=sheet.max_row,
+                                values_only=True),
+                start=current_th_row + 1):
+            logging.info(f"Processing row {row_num}: {row}")
+            num_route_from_excel = row[4]  # Пятый столбец с индексом 4
+            if num_route_from_excel in data:
+                rows_to_delete.append(row_num)
+
+        for row_num in reversed(rows_to_delete):
+            try:
+                sheet.delete_rows(row_num)
+            except Exception as e:
+                logging.error(f"Ошибка при удалении строки: {e}")
+        print(rows_to_delete)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
+            temp_file_name = temp_file.name
+            wb.save(temp_file_name)
+
+        await call.message.answer_document(InputFile(temp_file_name))
+
+    except Exception as e:
+        logging.error(f"Ошибка при обработке файла: {e}")
+
+
+@dp.callback_query_handler(text="report_today")
+async def show_today_report(call: CallbackQuery):
+    logging.info(f"Start show_today_report")
+
+    data = get_main_json()
+    print(data)
+
+    from datetime import datetime
+
+    today = datetime.now().date()
+    file_name_today = f"reestr_{today.strftime('%d_%m')}.xlsx"
+
+    current_directory = os.getcwd()
+    path_to_open = os.path.join(current_directory, file_name_today)
+
+    try:
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        current_th_row = 4
+
+        new_col_index_arrival = 10
+        sheet.insert_cols(new_col_index_arrival)
+        sheet.cell(row=4, column=new_col_index_arrival, value="Прибытие")
+
+        new_col_index_departure = 11
+        sheet.insert_cols(new_col_index_departure)
+        sheet.cell(row=4, column=new_col_index_departure, value="Убытие")
+
+        for row_num, row in enumerate(
+                sheet.iter_rows(min_row=current_th_row, max_row=current_th_row + 350, values_only=True),
+                start=current_th_row):
+            logging.info(f"Processing row {row_num}: {row}")
+            num_route_from_excel = row[4]  # Assuming the 5th column has an index of 4
+            for addr in data:
+                if addr['num_route'] == num_route_from_excel:
+                    print(
+                        f"Inserting value {addr['arrival_time']} into column {get_column_letter(new_col_index_arrival)}, row {row_num}")
+                    try:
+                        sheet.cell(row=row_num, column=new_col_index_arrival, value=addr['arrival_time'])
+                        sheet.cell(row=row_num, column=new_col_index_arrival).alignment = Alignment(
+                            horizontal='left')
+                    except Exception as e:
+                        logging.error(f"Ошибка при вставке данных: {e}")
+
+                    print(
+                        f"Inserting value {addr['departure_time']} into column {get_column_letter(new_col_index_departure)}, row {row_num}")
+                    try:
+                        sheet.cell(row=row_num, column=new_col_index_departure, value=addr['departure_time'])
+                        sheet.cell(row=row_num, column=new_col_index_departure).alignment = Alignment(
+                            horizontal='left')
+                    except Exception as e:
+                        logging.error(f"Ошибка при вставке данных: {e}")
+
+                    break
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
+            temp_file_name = temp_file.name
+            wb.save(temp_file_name)
+
+        await call.message.answer_document(InputFile(temp_file_name))
+    except Exception as e:
+        logging.error(f"Ошибка при обработке файла: {e}")
+
+
+import json
 import openpyxl
-
-import openpyxl
-
-
-# def modify_reestr(json_data):
-#     wb = openpyxl.load_workbook('reestr.xlsx')
-#     sheet = wb.active
-#     current_th_row = 4
-#     route_to_row = {}  # словарь для сохранения номеров строк по num_route
-#
-#     for th in json_data:
-#         routes_in_sheet = []
-#         for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
-#             if row[2] == th['num_th']:
-#                 routes_in_sheet.append(row)
-#                 # сохраняем номер строки для данного num_route
-#                 route_to_row[row[4]] = current_th_row  # row[4] это num_route
-#                 current_th_row += 1
-#             else:
-#                 break
-#
-#         sorted_routes = sorted(routes_in_sheet, key=lambda x: next((addr['order'] for addr in th['addreses'] if addr['num_route'] == x[4]), 1000))
-#         for idx, route in enumerate(sorted_routes):
-#             row_to_update = current_th_row + idx
-#             for col_num, value in enumerate(route, 1):
-#                 cell = sheet.cell(row=row_to_update, column=col_num)
-#                 if isinstance(cell, openpyxl.cell.MergedCell):
-#                     sheet.unmerge_cells(start_row=cell.row, start_column=cell.column, end_row=cell.row, end_column=cell.column)
-#                 cell.value = value
-#
-#     wb.save('reestr_modified.xlsx')
-#     return route_to_row
+from datetime import datetime, timedelta
+import os
+from aiogram.types import CallbackQuery, InputFile
 
 
-# def modify_reestr(json_data):
-#     wb = openpyxl.load_workbook('reestr.xlsx')
-#     sheet = wb.active
-#     current_th_row = 4
-#
-#     for th in json_data:
-#         routes_in_sheet = []
-#         for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
-#             if row[2] == th['num_th']:
-#                 routes_in_sheet.append(row)
-#             else:
-#                 break
-#         sorted_routes = sorted(routes_in_sheet, key=lambda x: next((addr['order'] for addr in th['addreses'] if addr['num_route'] == x[4]), 1000))
-#         for idx, route in enumerate(sorted_routes):
-#             row_to_update = current_th_row + idx
-#             for col_num, value in enumerate(route, 1):
-#                 sheet.cell(row=row_to_update, column=col_num).value = value
-#         current_th_row += len(routes_in_sheet)
-#     wb.save('reestr_modified.xlsx')
-
-
-# def modify_reestr(json_data):
-#     wb = openpyxl.load_workbook('reestr.xlsx')
-#     sheet = wb.active
-#     current_th_row = 4
-#     for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
-#         if row[2]:
-#             th = next((item for item in json_data if item['num_th'] == row[2]), None)
-#             if th is not None and 'addreses' in th:
-#                 sorted_addresses = sorted(th['addreses'], key=lambda x: x['num_route'])
-#                 for addr in sorted_addresses:
-#                     insertion_row = current_th_row + 1
-#                     while sheet.cell(row=insertion_row, column=5).value and addr['num_route'] > sheet.cell(
-#                             row=insertion_row, column=5).value:
-#                         insertion_row += 1
-#                     if sheet.cell(row=insertion_row, column=5).value:
-#                         sheet.insert_rows(insertion_row)
-#                     sheet.cell(row=insertion_row, column=5).value = addr['num_route']
-#                     sheet.cell(row=insertion_row, column=7).value = addr['num_shop']
-#                     sheet.cell(row=insertion_row, column=8).value = addr['code_tt']
-#                     sheet.cell(row=insertion_row, column=9).value = addr['address_delivery']
-#                     sheet.cell(row=insertion_row, column=10).value = addr['count_boxes']
-#                     sheet.cell(row=insertion_row, column=11).value = addr['weight']
-#                     current_th_row = insertion_row + 1
-#             else:
-#                 current_th_row += 1
-#     wb.save('reestr_modified.xlsx')
-
-# def reorder_rows_based_on_json(json_data):
-#     wb = openpyxl.load_workbook('reestr.xlsx')
-#     sheet = wb.active
-#
-#     current_order = modify_reestr(json_data)
-#
-#     for th_data in json_data:
-#         th_row = current_order[th_data['num_th']]['th_row']
-#
-#         routes_data = sorted(th_data['addreses'], key=lambda x: x['order'])
-#         for i, route in enumerate(routes_data):
-#             current_row_num = current_order[th_data['num_th']]['routes'][route['num_route']]
-#             new_row_num = th_row + i + 1
-#
-#             if current_row_num != new_row_num:
-#                 sheet.insert_rows(new_row_num)
-#                 for col_num, cell_value in enumerate(sheet[current_row_num], 1):
-#                     sheet.cell(row=new_row_num, column=col_num, value=cell_value.value)
-#                 sheet.delete_rows(current_row_num if current_row_num < new_row_num else current_row_num + 1)
-#     wb.save('reestr.xlsx')
-#
-#
-def modify_reestr(json_data):
+def reorder_rows_based_on_json(json_data):
     wb = openpyxl.load_workbook('reestr.xlsx')
     sheet = wb.active
-    current_th_row = 4
-    result = {}
-    for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
-        if row[2]:
-            th = next((item for item in json_data if item['num_th'] == row[2]), None)
-            if th is not None and 'addreses' in th:
-                result[th['num_th']] = {
-                    "th_row": current_th_row,
-                    "routes": {}
-                }
-                current_row = current_th_row + 1
-                while current_row < sheet.max_row:
-                    current_addr_row = sheet.cell(row=current_row,
-                                                  column=5).value
-                    addr = next((item for item in th['addreses'] if item['num_route'] == current_addr_row), None)
-                    if addr:
-                        result[th['num_th']]["routes"][addr['num_route']] = current_row
-                        current_row += 1
-                    else:
-                        break
-                current_th_row = current_row
-            else:
-                current_th_row += 1
 
-    return result
+    current_order = modify_reestr(json_data)
 
-# @dp.callback_query_handler(text="Table")
-# async def show_main_report(call: CallbackQuery):
-#     logging.info(f"Start show_main_report")
-#     data = get_main_json()
-#
-#     with open('json.txt', 'w', encoding='utf-8') as f:
-#         json.dump(data, f, ensure_ascii=False, indent=4, default=date_handler)
-#
-#     current_mapping = modify_reestr(data)
-#
-#     reorder_rows_based_on_json(data)
-#
-#     reordered_mapping = modify_reestr(data)
-#
-#     message_text = "До переупорядочивания:\n"
-#     for th, th_data in current_mapping.items():
-#         message_text += f"Номер строчки для num_th = {th}: {th_data['th_row']}\n"
-#         message_text += f"Номера строк num_route соответствующие num_th = {th}:\n"
-#         for route, route_row in th_data["routes"].items():
-#             message_text += f"{route}: {route_row}\n"
-#         message_text += "\n"
-#
-#     message_text += "\nПосле переупорядочивания:\n"
-#     for th, th_data in reordered_mapping.items():
-#         message_text += f"Номер строчки для num_th = {th}: {th_data['th_row']}\n"
-#         message_text += f"Номера строк num_route соответствующие num_th = {th}:\n"
-#         for route, route_row in th_data["routes"].items():
-#             message_text += f"{route}: {route_row}\n"
-#         message_text += "\n"
-#
-#     await call.message.answer(message_text.strip())
-#     await call.message.answer_document(InputFile('json.txt'))
+    for th_data in json_data:
+        th_row = current_order[th_data['num_th']]['th_row']
 
-# @dp.callback_query_handler(text="Table")
-# async def show_main_report(call: CallbackQuery):
-#     logging.info(f"Start show_main_report")
-#     data = get_main_json()
-#
-#     with open('json.txt', 'w', encoding='utf-8') as f:
-#         json.dump(data, f, ensure_ascii=False, indent=4, default=date_handler)
-#
-#     mapping = modify_reestr(data)
-#
-#     # Переупорядочивание строк в reestr.xlsx на основе данных JSON
-#     reorder_rows_based_on_json(data)
-#
-#     message_text = ""
-#     for th, th_data in mapping.items():
-#         message_text += f"Номер строчки для num_th = {th}: {th_data['th_row']}\n"
-#         message_text += f"Номера строк num_route соответствующие num_th = {th}:\n"
-#         for route, route_row in th_data["routes"].items():
-#             message_text += f"{route}: {route_row}\n"
-#         message_text += "\n"
-#
-#     await call.message.answer(message_text.strip())
-#     await call.message.answer_document(InputFile('json.txt'))
+        routes_data = sorted(th_data['addreses'], key=lambda x: x['order'])
+        for i, route in enumerate(routes_data):
+            current_row_num = current_order[th_data['num_th']]['routes'][route['num_route']]
+            new_row_num = th_row + i + 1
+
+            if current_row_num != new_row_num:
+                sheet.insert_rows(new_row_num)
+                for col_num, cell_value in enumerate(sheet[current_row_num], 1):
+                    sheet.cell(row=new_row_num, column=col_num, value=cell_value.value)
+                sheet.delete_rows(current_row_num if current_row_num < new_row_num else current_row_num + 1)
+    wb.save('reestr.xlsx')
 
 
+@dp.callback_query_handler(text="optimalReport")
+async def show_main_report(call: CallbackQuery):
+    logging.info(f"Start show_main_report")
+    json_data = get_optimal_json()
 
+    with open('json.txt', 'w', encoding='utf-8') as f:
+        json.dump(json_data, f, ensure_ascii=False,
+                  indent=4)
 
-# Пример использования:
-# update_excel_with_route_driver_car('reestr_modified.xlsx', '0000-013333', 'Driver Name', 'Car Model')
+    print(json_data)
+
+    current_mapping = process_json_to_excel()
+
+    print(current_mapping)
 
 
 from collections import Counter
@@ -633,15 +600,13 @@ def fix_duplicate_rows(sheet, json_data, current_order):
         routes_data = sorted(th_data['addreses'], key=lambda x: x['order'])
         route_numbers = [route['num_route'] for route in routes_data]
 
-        # Проверяем наличие дублирующихся строк
-        duplicates = [num for num, count in Counter(route_numbers).items() if count > 1]
+        duplicates = [num for num, count in Counter(route_numbers).items() if count > 1]  # Проверяем наличие дублирующихся строк
 
         logging.info(f"Found duplicates: {duplicates} for th_data: {th_data['num_th']}")
 
         if duplicates:
             for duplicate in duplicates:
-                # Заменяем дублирующую строку на отсутствующую строку
-                missing_route = set(route_numbers) - set(current_order[th_data['num_th']]['routes'].keys())
+                missing_route = set(route_numbers) - set(current_order[th_data['num_th']]['routes'].keys())  # Заменяем дублирующую строку на отсутствующую строку
 
                 logging.info(f"Missing routes for duplicate {duplicate}: {missing_route}")
 
@@ -660,7 +625,7 @@ def fix_duplicate_rows(sheet, json_data, current_order):
 
 
 def reorder_addresses_in_excel(json_data, file_name='reestr.xlsx'):
-    logging.info("Starting reorder_addresses_in_excel...")
+    logging.info("Starting reorder_addresses_in_excel")
     wb = openpyxl.load_workbook(file_name)
     sheet = wb.active
 
@@ -670,7 +635,7 @@ def reorder_addresses_in_excel(json_data, file_name='reestr.xlsx'):
 
     fix_duplicate_rows(sheet, json_data, current_order)
 
-    buffered_rows = {}  # Temporary buffer to hold row data
+    buffered_rows = {}
 
     for th_data in json_data:
         th_row = current_order[th_data['num_th']]['th_row']
@@ -727,159 +692,18 @@ def get_current_order_from_excel(sheet, json_data):
     return result
 
 
-@dp.callback_query_handler(text="Table")
-async def show_main_report(call: CallbackQuery):
-    logging.info(f"Start show_main_report")
-    data = get_main_json()
-
-    with open('json.txt', 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4, default=date_handler)
-
-    modify_reestr(data)
-    reorder_addresses_in_excel(data)
-
-    # Отправка файла пользователю в чат
-    temp_file_path = 'reestr.xlsx'
-    with open(temp_file_path, "rb") as excel_file:
-        await bot.send_document(call.from_user.id, InputFile(excel_file, filename="reestr.xlsx"))
+@dp.callback_query_handler(text="reportForCustomer")
+async def start_reportForCustomer(query: types.CallbackQuery):
+    await bot.send_message(
+        query.from_user.id, "За какой день Вам нужен отчёт ?",
+        reply_markup=nav.mainMenu3)
 
 
-# @dp.callback_query_handler(text="Table")
-# async def show_main_report(call: CallbackQuery):
-#     logging.info(f"Start show_main_report")
-#     data = get_main_json()
-#     with open('json.txt', 'w', encoding='utf-8') as f:
-#         json.dump(data, f, ensure_ascii=False, indent=4, default=date_handler)
-#     # route_to_row = modify_reestr(data)
-#     modify_reestr(data)
-#     reorder_addresses_in_excel(data)
-#     # message_text = "Номера строк для num_route:\n"
-#     # for route, row in route_to_row.items():
-#     #     message_text += f"{route}: {row}\n"
-#     # await call.message.answer(message_text)
-#     await call.message.answer_document(InputFile('json.txt'))
-
-
-# def reorder_addresses_in_excel(json_data, file_name='reestr.xlsx'):
-#     logging.info("Starting reorder_addresses_in_excel...")
-#     wb = openpyxl.load_workbook(file_name)
-#     sheet = wb.active
-#
-#     current_order = get_current_order_from_excel(sheet, json_data)
-#     logging.info(f"Current order from Excel: {current_order}")
-#
-#     fix_duplicate_rows(sheet, json_data, current_order)
-#
-#     for th_data in json_data:
-#         th_row = current_order[th_data['num_th']]['th_row']
-#         routes_data = sorted(th_data['addreses'], key=lambda x: x['order'])
-#
-#         for i, route in enumerate(routes_data):
-#             new_row_num = th_row + i + 1
-#             current_row_num = current_order[th_data['num_th']]['routes'][route['num_route']]
-#
-#             if current_row_num != new_row_num:
-#                 logging.info(f"Reordering row from {current_row_num} to {new_row_num} for route: {route['num_route']}")
-#
-#                 for col_num, cell_value in enumerate(sheet[current_row_num], 1):
-#                     sheet.cell(row=new_row_num, column=col_num, value=cell_value.value)
-#
-#     wb.save(file_name)
-
-# @dp.callback_query_handler(text="Table")
-# async def show_main_report(call: CallbackQuery):
-#     logging.info(f"Start show_main_report")
-#     data = get_main_json()
-#
-#     with open('json.txt', 'w', encoding='utf-8') as f:
-#         json.dump(data, f, ensure_ascii=False, indent=4, default=date_handler)
-#
-#     modify_reestr(data)
-#
-#     await call.message.answer_document(InputFile('json.txt'))
-
-
-# @dp.callback_query_handler(text="Table")
-# async def show_main_report(call: CallbackQuery):
-#     logging.info(f"Start show_main_report")
-#     selected_addresses = get_main_json()
-#     if not selected_addresses:
-#         logging.info("No addresses to remove found.")
-#         return
-#     try:
-#         wb = openpyxl.load_workbook('reestr.xlsx')
-#         sheet = wb.active
-#         rows_to_delete = []
-#         for cell in sheet['E']:
-#             if cell.row == 1:
-#                 continue
-#             if cell.value in selected_addresses:
-#                 rows_to_delete.append(cell.row)
-#         for row_index in reversed(rows_to_delete):
-#             sheet.delete_rows(row_index, 1)
-#         wb.save('reestr.xlsx')
-#         logging.info(f"Updated Excel file by removing rows with addresses {selected_addresses}")
-#     except Exception as e:
-#         logging.error(f"Error processing 'reestr.xlsx'. Exception: {e}")
-
-
-# @dp.callback_query_handler(text="Table")
-# async def show_main_report(call: CallbackQuery):
-#     logging.info(f"Start show_main_report")
-#     selected_num_route = get_null_address_delivery()
-#     if selected_num_route:
-#         logging.info(f"Starting show_daily_report_excel for route {selected_num_route}")
-#         try:
-#             wb = openpyxl.load_workbook('reestr.xlsx')
-#             logging.info(f"'reestr.xlsx' file found and opened successfully.")
-#         except Exception as e:
-#             logging.error(f"Error opening 'reestr.xlsx'. Exception: {e}")
-#             return
-#         sheet = wb.active
-#         rows_to_delete = []
-#
-#         for row in sheet.iter_rows(min_col=5, max_col=5):
-#             logging.info(f"Row {row[0].row}: num_route value - {row[0].value}")
-#             if row[0].value in selected_num_route:
-#                 rows_to_delete.append(row[0].row)
-#
-#         for row_index in reversed(rows_to_delete):
-#             sheet.delete_rows(row_index, 1)
-#         wb.save('reestr.xlsx')
-#         logging.info(f"Updated Excel file by removing rows with driver {selected_num_route}")
-
-# @dp.callback_query_handler(text="Table")
-# async def show_main_report(call: CallbackQuery):
-#     logging.info(f"Start show_main_report")
-#     selected_num_route = get_num_route()
-#     if selected_num_route:
-#         logging.info(f"Starting show_daily_report_excel for route {selected_num_route}")
-#         wb = openpyxl.load_workbook('reestr.xlsx')
-#         sheet = wb.active
-#         for row in reversed(sheet.iter_rows(min_col=5, max_col=5)):
-#             if not row[0].value or row[0].value == 'NULL':
-#                 sheet.delete_rows(row[0].row, 1)
-#         wb.save('reestr.xlsx')
-#         logging.info(f"Updated Excel file with driver {selected_num_route}")
-
-# @dp.callback_query_handler(text="Table")
-# async def show_main_report(call: CallbackQuery):
-#     logging.info(f"Start show_main_report")
-#     selected_num_route = get_num_route()
-#     if selected_num_route:
-#         logging.info(f"Starting show_daily_report_excel for route {selected_num_route}")
-#         wb = openpyxl.load_workbook('reestr.xlsx')
-#         sheet = wb.active
-#         for row in reversed(sheet.iter_rows(min_col=5, max_col=5)):
-#             logging.info(f"Row {row[0].row}: num_route value - {row[0].value}")
-#             if row[0].value in selected_num_route:
-#                 sheet.delete_rows(row[0].row, 1)
-#         wb.save('reestr.xlsx')
-#         logging.info(f"Updated Excel file by removing rows with driver {selected_num_route}")
-
-
-@dp.callback_query_handler(text="Report")
+@dp.callback_query_handler(text="internalReport")
 async def show_daily_report_excel(call: CallbackQuery):
+
+    logging.info("start show_daily_report_excel")
+
     temp_file_path = "report_internal.xlsx"
 
     workbook = Workbook()
@@ -912,17 +736,18 @@ async def show_daily_report_excel(call: CallbackQuery):
          str((datetime.combine(datetime.min, row[5]) - datetime.combine(
              datetime.min, row[4])).seconds // 60) + ' мин' if row[4] and row[5] else '',  # Время погрузки
          'погрузка'  # Цель въезда/выезда
-         ) for row in info_for_report
-    ]
+         ) for row in info_for_report if row[1]]
 
     data = header_data + report_data
 
     for row in data:
         sheet.append(row)
+
     for row_idx in [1, 2]:
         sheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=10)
         cell = sheet.cell(row=row_idx, column=1)
         cell.alignment = Alignment(horizontal='center')
+
     for cell in sheet[3]:
         cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
@@ -936,7 +761,6 @@ async def show_daily_report_excel(call: CallbackQuery):
         await bot.send_document(call.from_user.id, InputFile(excel_file, filename="report_internal.xlsx"))
     os.remove(temp_file_path)
     await call.answer()
-
 
 
 if __name__ == "__main__":
