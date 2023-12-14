@@ -176,18 +176,19 @@ async def handle_loading_time_choice(message: types.Message, state: FSMContext):
 
     if not selected_driver_car or not selected_driver_user_id:
         logger.error("Не найдена информация о машине или user_id водителя.")
-        await bot.send_message(message.from_user.id, "Информация о водителе или его машине не найдена.")
+        await bot.send_message(message.from_user.id, "Информация о водителе или его машине не найдена")
         return
 
     logger.info(f"Выбранный автомобиль водителя: {selected_driver_car}")
     logger.info(f"User ID выбранного водителя: {selected_driver_user_id}")
 
     try:
-        insert_driver_for_route(selected_route, selected_driver, selected_driver_car, selected_time, selected_driver_user_id)
-        logger.info("Водитель добавлен к маршруту успешно.")
+        insert_driver_for_route(
+            selected_route, selected_driver, selected_driver_car, selected_time, selected_driver_user_id)
+        logger.info("Водитель добавлен к маршруту успешно")
     except Exception as e:
         logger.exception("Ошибка при добавлении водителя к маршруту:")
-        await bot.send_message(message.from_user.id, "Произошла ошибка при добавлении водителя к маршруту.")
+        await bot.send_message(message.from_user.id, "Произошла ошибка при добавлении водителя к маршруту")
         return
 
     try:
@@ -195,7 +196,7 @@ async def handle_loading_time_choice(message: types.Message, state: FSMContext):
         logger.info(f"User ID водителя обновлен для адресов маршрута {selected_route}.")
     except Exception as e:
         logger.exception("Ошибка при обновлении user_id в адресной таблице:")
-        await bot.send_message(message.from_user.id, "Произошла ошибка при обновлении user_id в адресах.")
+        await bot.send_message(message.from_user.id, "Произошла ошибка при обновлении user_id в адресах")
         return
 
     await bot.send_message(
@@ -203,7 +204,7 @@ async def handle_loading_time_choice(message: types.Message, state: FSMContext):
         f"Маршруту {selected_route} присвоен водитель {selected_driver} с машиной {selected_driver_car} и временем прибытия {selected_time}")
     await bot.send_message(message.from_user.id, "Продолжим распределение маршрутов ?", reply_markup=nav.mainMenu2)
 
-    logger.info("Сообщение пользователю отправлено.")
+    logger.info("Сообщение пользователю отправлено")
     await state.finish()
 
 
@@ -383,12 +384,10 @@ def create_json_from_columns(file_path):
     return {key: value for key, value in data.items()}
 
 
-def process_json_to_excel():
-    logging.basicConfig(level=logging.INFO)
-    logging.info("Начало обработки данных")
-
+def main_json_to_excel():
+    logging.info("Start main_json_to_excel")
     try:
-        with open('json.txt', 'r', encoding='utf-8') as json_file:
+        with open('main.txt', 'r', encoding='utf-8') as json_file:
             json_data = json.load(json_file)
         logging.info("Данные JSON успешно загружены")
     except Exception as e:
@@ -406,11 +405,16 @@ def process_json_to_excel():
         return
 
     try:
-        current_th_row = 4
-        for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
-            if row[2]:
-                th = next((item for item in json_data if item['num_th'] == row[2]), None)
-                if th is not None and 'addresses' in th:
+        current_th_row = 4  # Начало с четвертой строки
+        while current_th_row <= sheet.max_row:
+            row = sheet[current_th_row]
+            num_th = row[2].value
+            if num_th:
+                th = next((item for item in json_data if item['num_th'] == num_th), None)
+                if th:
+                    sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
+                    sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
+                    sheet.cell(row=current_th_row, column=14).value = th['num_car']  # Записываем  для num_th
                     current_row = current_th_row + 1
                     for addr in th['addresses']:
                         sheet.cell(row=current_row, column=5).value = addr['num_route']
@@ -423,10 +427,200 @@ def process_json_to_excel():
                     current_th_row = current_row
                 else:
                     current_th_row += 1
+            else:
+                current_th_row += 1
         wb.save('reestr_modified.xlsx')
         logging.info("Данные успешно записаны в Excel")
     except Exception as e:
         logging.error(f"Ошибка при обработке данных: {e}")
+
+
+# def main_json_to_excel():
+#     logging.info("Start main_json_to_excel")
+#     try:
+#         with open('main.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#
+#     try:
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     try:
+#         current_th_row = 4
+#         for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
+#             if row[2]:
+#                 th = next((item for item in json_data if item['num_th'] == row[2]), None)
+#                 if th:
+#                     if sheet.cell(row=current_th_row, column=3).value == row[2] and not sheet.cell(row=current_th_row,
+#                                                                                                    column=12).value:
+#                         sheet.cell(row=current_th_row, column=12).value = th['driver']
+#                 if th is not None and 'addresses' in th:
+#                     current_row = current_th_row + 1
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         sheet.cell(row=current_row, column=12).value = th['driver']
+#
+#                         current_row += 1
+#                     current_th_row = current_row
+#                 else:
+#                     current_th_row += 1
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
+
+#
+# def main_json_to_excel():
+#     logging.info("Start main_json_to_excel")
+#     try:
+#         with open('main.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#
+#     try:
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     try:
+#         current_th_row = 4
+#         for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
+#             if row[2]:
+#                 th = next((item for item in json_data if item['num_th'] == row[2]), None)
+#                 if th is not None and 'addresses' in th:
+#                     current_row = current_th_row + 1
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         current_row += 1
+#                     current_th_row = current_row
+#                 else:
+#                     current_th_row += 1
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
+
+
+def overweight_json_to_excel():
+    logging.info("Start overweight_json_to_excel")
+    try:
+        with open('overweight.txt', 'r', encoding='utf-8') as json_file:
+            json_data = json.load(json_file)
+        logging.info("Данные JSON успешно загружены")
+    except Exception as e:
+        logging.error(f"Ошибка при чтении JSON: {e}")
+        return
+
+    try:
+        file_name_today = f"reestr_modified.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today)
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        logging.info("Excel-файл успешно открыт")
+    except Exception as e:
+        logging.error(f"Ошибка при открытии Excel-файла: {e}")
+        return
+
+    try:
+        total_row = None
+        for row in sheet.iter_rows(min_row=4, max_col=1):
+            if row[0].value == "Итого":
+                total_row = row[0].row
+                break
+
+        rows_to_move = []
+        for row in sheet.iter_rows(min_row=4, max_row=total_row - 1):
+            num_route = row[4].value
+            if any(item['num_route'] == num_route for item in json_data):
+                rows_to_move.append((row[0].row, [cell.value for cell in row]))
+
+        for row_index, _ in sorted(rows_to_move, reverse=True):
+            sheet.delete_rows(row_index)
+
+        for _, row_data in rows_to_move:
+            sheet.insert_rows(total_row)
+            for col, value in enumerate(row_data, start=1):
+                sheet.cell(row=total_row, column=col).value = value
+            total_row += 1
+
+        wb.save('reestr_modified.xlsx')
+        logging.info("Данные успешно записаны в Excel")
+    except Exception as e:
+        logging.error(f"Ошибка при обработке данных: {e}")
+
+
+# def process_json_to_excel():
+#     logging.basicConfig(level=logging.INFO)
+#     logging.info("Начало обработки данных")
+#
+#     try:
+#         with open('json.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#
+#     try:
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     try:
+#         current_th_row = 4
+#         for row in sheet.iter_rows(min_row=current_th_row, values_only=True):
+#             if row[2]:
+#                 th = next((item for item in json_data if item['num_th'] == row[2]), None)
+#                 if th is not None and 'addresses' in th:
+#                     current_row = current_th_row + 1
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         current_row += 1
+#                     current_th_row = current_row
+#                 else:
+#                     current_th_row += 1
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
 
 
 def try_parse_time(time_str):
@@ -573,20 +767,53 @@ def reorder_rows_based_on_json(json_data):
     wb.save('reestr.xlsx')
 
 
+def add_drivers_to_route(main_reestr):
+    logging.info("Start add_drivers_to_route")
+    drivers_shops = database.get_likes_shop_drivers()
+    for th in main_reestr:
+        for route in th['addresses']:
+            if drivers_shops.get(route['num_shop']):
+                th['driver'] = drivers_shops.get(route['num_shop'])
+                break
+    return main_reestr
+
+
 @dp.callback_query_handler(text="optimalReport")
 async def show_main_report(call: CallbackQuery):
-    logging.info(f"Start show_main_report")
-    json_data = get_optimal_json()
+    logging.info("Start show_main_report")
+    main, overweight = get_optimal_json()
+    #print("add_drivers_to_route")
+    #print(add_drivers_to_route(main))
 
-    with open('json.txt', 'w', encoding='utf-8') as f:
-        json.dump(json_data, f, ensure_ascii=False,
-                  indent=4)
+    with open('main.txt', 'w', encoding='utf-8') as f:
+        json.dump(main, f, ensure_ascii=False, indent=4)
 
-    print(json_data)
+    with open('overweight.txt', 'w', encoding='utf-8') as f:
+        json.dump(overweight, f, ensure_ascii=False, indent=4)
 
-    current_mapping = process_json_to_excel()
+    print(main)
+    print(overweight)
 
-    print(current_mapping)
+    main_mapping = main_json_to_excel()
+
+    overweight_mapping = overweight_json_to_excel()
+
+    print(main_mapping)
+    print(overweight_mapping)
+
+# @dp.callback_query_handler(text="optimalReport")
+# async def show_main_report(call: CallbackQuery):
+#     logging.info(f"Start show_main_report")
+#     json_data = get_optimal_json()
+#
+#     with open('json.txt', 'w', encoding='utf-8') as f:
+#         json.dump(json_data, f, ensure_ascii=False, indent=4)
+#
+#     print(json_data)
+
+    # current_mapping = process_json_to_excel()
+    #
+    # print(current_mapping)
 
 
 from collections import Counter

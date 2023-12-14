@@ -47,6 +47,7 @@ class DriversTable(Base):
     first_name = Column(String(255), nullable=False)
     patronymic = Column(String(255))
     user_id = Column(Integer)
+    like_num_shop = Column(String(255))
 
 
 class ReestrTable(Base):
@@ -251,6 +252,12 @@ def insert_driver_for_route(selected_route, selected_driver, selected_driver_car
 from decimal import Decimal
 
 
+def convert_decimal(value):  # Конвертируем Decimal в float
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
 def filter_addresses(session, num_th):
     addresses = (
         session.query(AddressTable)
@@ -260,46 +267,164 @@ def filter_addresses(session, num_th):
     return addresses
 
 
-def convert_decimal(value):
-    """Конвертирует Decimal в float."""
-    if isinstance(value, Decimal):
-        return float(value)
-    return value
-
-
 def get_optimal_json():
     today = datetime.now().date()
     tomorrow = today + timedelta(days=1)
+    drivers_shops = get_likes_shop_drivers()
+
     try:
         reestr_entries = session.query(ReestrTable).filter(func.date(ReestrTable.date_th) == tomorrow).all()
-        result = []
+
+        route_entries = []
+        overweight_addresses = []
 
         for entry in reestr_entries:
             num_th = entry.num_th
             addresses = filter_addresses(session, num_th)
 
             address_list = []
-            for idx, addr in enumerate(addresses):
-                address_list.append({
-                    "index_number": addr.index_number,
+            total_weight = 0
+            driver_assigned = None
+            num_car = None
+
+            for addr in addresses:
+                weight = convert_decimal(addr.weight)
+                total_weight += weight
+
+                address_info = {
                     "num_route": addr.num_route,
                     "num_shop": addr.num_shop,
                     "code_tt": addr.code_tt,
                     "address_delivery": addr.address_delivery,
+                    "index_number": addr.index_number,
                     "count_boxes": convert_decimal(addr.count_boxes),
-                    "weight": convert_decimal(addr.weight)
-                })
+                    "weight": weight
+                }
 
-            result.append({
+                address_list.append(address_info)
+
+                if total_weight > 3000:
+                    overweight_addresses.append(address_info)
+
+                if not driver_assigned and drivers_shops.get(addr.num_shop):
+                    driver_assigned, num_car = drivers_shops.get(addr.num_shop)
+
+            route_entries.append({
                 "num_th": num_th,
                 "date_th": entry.date_th.strftime('%d.%m.%Y'),
+                "driver": driver_assigned,
+                "num_car": num_car,
                 "addresses": address_list
-            })
+                })
 
-        return result
+        return route_entries, overweight_addresses
+
     except Exception as e:
         print("An error occurred:", e)
         return []
+
+
+def get_likes_shop_drivers():
+    drivers = session.query(DriversTable).all()
+    like_shop = {}
+    for driver in drivers:
+        if driver.like_num_shop:
+            for num_shop in driver.like_num_shop.split(','):
+                like_shop[num_shop.strip()] = (driver.last_name, driver.num_car)
+
+    return like_shop
+
+
+# def get_optimal_json():
+#     today = datetime.now().date()
+#     tomorrow = today + timedelta(days=1)
+#     try:
+#         reestr_entries = session.query(ReestrTable).filter(func.date(ReestrTable.date_th) == tomorrow).all()
+#
+#         route_entries = []
+#         overweight_addresses = []
+#
+#         for entry in reestr_entries:
+#             num_th = entry.num_th
+#             addresses = filter_addresses(session, num_th)
+#
+#             address_list = []
+#             total_weight = 0
+#
+#             for addr in addresses:
+#                 weight = convert_decimal(addr.weight)
+#                 total_weight += weight
+#
+#                 if total_weight > 3000:
+#                     overweight_addresses.append({
+#                         "num_route": addr.num_route,
+#                         "num_shop": addr.num_shop,
+#                         "code_tt": addr.code_tt,
+#                         "address_delivery": addr.address_delivery,
+#                         "index_number": addr.index_number,
+#                         "count_boxes": convert_decimal(addr.count_boxes),
+#                         "weight": weight
+#                     })
+#                 else:
+#                     address_list.append({
+#                         "num_route": addr.num_route,
+#                         "num_shop": addr.num_shop,
+#                         "code_tt": addr.code_tt,
+#                         "address_delivery": addr.address_delivery,
+#                         "index_number": addr.index_number,
+#                         "count_boxes": convert_decimal(addr.count_boxes),
+#                         "weight": weight
+#                     })
+#
+#         route_entries.append({
+#             "num_th": num_th,
+#             "date_th": entry.date_th.strftime('%d.%m.%Y'),
+#             "addresses": address_list
+#         })
+#
+#         final_data = route_entries + [{"overweight_addresses": overweight_addresses}]
+#
+#         return final_data
+#
+#     except Exception as e:
+#         print("An error occurred:", e)
+#         return []
+
+
+# def get_optimal_json():
+#     today = datetime.now().date()
+#     tomorrow = today + timedelta(days=1)
+#     try:
+#         reestr_entries = session.query(ReestrTable).filter(func.date(ReestrTable.date_th) == tomorrow).all()
+#         result = []
+#
+#         for entry in reestr_entries:
+#             print("Processing num_th:", entry.num_th)
+#             num_th = entry.num_th
+#             addresses = filter_addresses(session, num_th)
+#
+#             address_list = []
+#             for idx, addr in enumerate(addresses):
+#                 address_list.append({
+#                     "index_number": addr.index_number,
+#                     "num_route": addr.num_route,
+#                     "num_shop": addr.num_shop,
+#                     "code_tt": addr.code_tt,
+#                     "address_delivery": addr.address_delivery,
+#                     "count_boxes": convert_decimal(addr.count_boxes),
+#                     "weight": convert_decimal(addr.weight)
+#                 })
+#
+#             result.append({
+#                 "num_th": num_th,
+#                 "date_th": entry.date_th.strftime('%d.%m.%Y'),
+#                 "addresses": address_list
+#             })
+#
+#         return result
+#     except Exception as e:
+#         print("An error occurred:", e)
+#         return []
 
 
 def fetch_addresses(session, num_th, is_null):
