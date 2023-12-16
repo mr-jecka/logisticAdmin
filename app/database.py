@@ -17,8 +17,8 @@ Base = declarative_base()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-user = os.getenv('POSTGRES_USER', 'bank_user')
-password = os.getenv('POSTGRES_PASSWORD', 'bank_password')
+user = os.getenv('POSTGRES_USER', 'postgres')
+password = os.getenv('POSTGRES_PASSWORD', 'postgres')
 host = os.getenv('POSTGRES_HOST', 'localhost')
 #host = os.getenv('POSTGRES_HOST', '194.87.92.15')
 port = os.getenv('POSTGRES_PORT_NUMBER', "5432")
@@ -85,6 +85,8 @@ class AddressTable(Base):
     departure_time = Column(Time)
     index_number = Column(Integer)
     user_id = Column(Integer)
+    longitude = Column(Numeric(10,2))
+    latitude = Column(Numeric(10, 2))
 
 
 def calculate_delivery_order(departure_place, api_key, destinations):
@@ -557,6 +559,21 @@ def find_and_delete_total(sheet, start_row):
     if total_row_index is not None:
         sheet.delete_rows(total_row_index, 21)  # Удалить строку "Итого" и следующие 20 строк
 
+def select_driver_by_shop_num(th):
+    db = Session()
+    drivers = db.query(DriversTable).all()
+    for driver in drivers:
+        like_shops_driver = driver.like_num_shop.split(',')
+        shops_th = []
+        for addr in th["addresses"]:
+            shops_th.append(addr["num_shop"])
+        if any(shops_th[idx: idx + len(like_shops_driver)] == like_shops_driver for idx in range(len(shops_th) - len(like_shops_driver) + 1)):
+            db.close()
+            return driver.last_name
+    return None
+
+
+
 
 def insert_excel_to_db(excel_file_path, db_params):
     try:
@@ -602,7 +619,6 @@ def insert_excel_to_db(excel_file_path, db_params):
                 addr["weight"] = float(row[10])
                 th["addresses"].append(addr)
         ths.append(th)
-
         with conn:
             with conn.cursor() as cursor:
                 for th in ths:
@@ -612,19 +628,28 @@ def insert_excel_to_db(excel_file_path, db_params):
                         RETURNING id;
                     """, (th["num_th"], th["date_th"], th["total_count_boxes"], th["total_weight"]))
                     th_id = cursor.fetchone()[0]
-
+                    last_name_driver = select_driver_by_shop_num(th)
+                    if last_name_driver is None:
+                        last_name_driver = "не уствновлен"
                     for addr in th["addresses"]:
+
                         coordinates = revers_geocoding_yandex(addr["address_delivery"])
                         if coordinates:
                             addr["latitude"], addr["longitude"] = coordinates
+                            # adr_add = AddressTable()
+                            # adr_add.num_th = addr["num_th"]
+                            # adr_add.num_route = addr["num_route"]
+                            # adr_add.num_shop= addr["num_shop"]
+                            # adr_add.code_tt = addr["code_tt"]
+                            # adr_add.
                             cursor.execute("""
                                 INSERT INTO address_table (
                                 num_th, num_route, num_shop, code_tt, address_delivery,
-                                 count_boxes, weight, th_id, latitude, longitude)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                                 count_boxes, weight, th_id, latitude, longitude, last_name)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                             """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
                                   addr["address_delivery"], addr["count_boxes"], addr["weight"],
-                                  th_id, addr["latitude"], addr["longitude"]))
+                                  th_id, addr["latitude"], addr["longitude"], last_name_driver))
                             new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
                             new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
                             print("New UUID in reestr_table:", new_uuid_in_reestr)
