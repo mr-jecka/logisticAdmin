@@ -1,11 +1,14 @@
 import tempfile
+import time
+
 from openpyxl import Workbook
 from aiogram import Bot, Dispatcher, executor, types
 import markup as nav
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from database import get_drivers_for_route, get_routes, insert_driver_for_route, get_optimal_json, \
-    get_main_json, get_info_for_report, insert_user_id_for_addresses, get_main_json_14, update_index_numbers
+    get_main_json, get_info_for_report, insert_user_id_for_addresses, get_main_json_14, \
+    display_assigned_driver_details, assign_drivers_to_addresses, num_th_to_drivers, update_index_numbers
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
 import logging
@@ -82,10 +85,24 @@ async def start_distribute_route(query: types.CallbackQuery):
     await bot.send_message(query.from_user.id, "Строим оптимальные маршруты на завтра")
     today = datetime.now().date()
     tomorrow = today + timedelta(days=1)
-    tomorrow_routes = update_index_numbers(tomorrow)
+    tomorrow_routes = update_index_numbers()
     if not tomorrow_routes:
         await bot.send_message(query.from_user.id, "Не найдены маршруты на завтра")
         return
+
+
+@dp.callback_query_handler(text="overWeight")
+async def start_distribute_route(query: types.CallbackQuery):
+    assign_drivers_to_addresses()
+    time.sleep(2)
+    display_assigned_driver_details()
+    #reassign_tasks_to_drivers_with_capacity()
+    return
+
+
+@dp.callback_query_handler(text="THforDrivers")
+async def start_distribute_route(query: types.CallbackQuery):
+    num_th_to_drivers()
 
 
 @dp.callback_query_handler(text="distribute_routes")
@@ -384,6 +401,160 @@ def create_json_from_columns(file_path):
     return {key: value for key, value in data.items()}
 
 
+
+# def main_json_to_excel():
+#     logging.info("Start main_json_to_excel")
+#     row_ranges = {}  # Словарь для хранения диапазонов строк для каждого "Номера ТН"
+#
+#     try:
+#         with open('main.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#
+#     try:
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     try:
+#         current_th_row = 4  # Начало с четвертой строки
+#         row_ranges = {}  # Словарь для хранения диапазонов строк для каждого "Номера ТН"
+#
+#         while current_th_row <= sheet.max_row:
+#             row = sheet[current_th_row]
+#             num_th = row[2].value
+#             if num_th:
+#                 th = next((item for item in json_data if item['num_th'] == num_th), None)
+#                 if th:
+#                     logger.info(f"Обрабатывается num_th: {num_th}, Строка Excel: {row[0].row}")
+#
+#                     # Вычисляем диапазон строк для текущего "Номера ТН"
+#                     if num_th not in row_ranges:
+#                         row_ranges[num_th] = (current_th_row, current_th_row)
+#
+#                     sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
+#                     sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
+#                     sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем для num_th th['num_car']
+#                     current_row = current_th_row + 1
+#                     weight = 0.0
+#                     count_boxes = 0
+#
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         weight += addr['weight']
+#                         count_boxes += addr['count_boxes']
+#                         current_row += 1
+#
+#                     sheet.cell(row=current_th_row, column=10).value = count_boxes
+#                     sheet.cell(row=current_th_row, column=11).value = weight
+#                     current_th_row = current_row
+#                 else:
+#                     current_th_row += 1
+#             else:
+#                 current_th_row += 1
+#         print(row_ranges)
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
+
+#
+# def main_json_to_excel():
+#     logging.info("Start main_json_to_excel")
+#     try:
+#         with open('main.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#
+#     try:
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     try:
+#         current_th_row = 4  # Начало с четвертой строки
+#         while current_th_row <= sheet.max_row:
+#             row = sheet[current_th_row]
+#             num_th = row[2].value
+#             if num_th:
+#                 th = next((item for item in json_data if item['num_th'] == num_th), None)
+#                 if th:
+#                     logger.info(f"Обрабатывается num_th: {num_th}, Строка Excel: {row[0].row}")
+#
+#                     sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
+#                     sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
+#                     sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем  для num_th  th['num_car']
+#                     current_row = current_th_row + 1
+#                     weight = 0.0
+#                     count_boxes = 0
+#
+#                     # Создаем список для индексов строк, которые нужно удалить
+#                     rows_to_delete = []
+#
+#                     # Заполняем список индексами строк, которые касаются данного 'th'
+#                     while current_row <= sheet.max_row:
+#                         num_th_check = sheet.cell(row=current_row, column=3).value
+#                         if num_th_check == num_th:
+#                             rows_to_delete.append(current_row)
+#                         else:
+#                             logger.info(f"Прерывание цикла. Не совпало значение num_th_check: {num_th_check} с num_th: {num_th}")
+#                             break
+#
+#                     # Удаляем строки в обратном порядке, чтобы избежать смещения индексов
+#                     rows_to_delete.reverse()
+#                     for row_to_delete in rows_to_delete:
+#                         print(f"Удаление строки {row_to_delete} для num_th: {num_th}")
+#                         sheet.delete_rows(row_to_delete)
+#
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         weight += addr['weight']
+#                         count_boxes += addr['count_boxes']
+#                         current_row += 1
+#                     sheet.cell(row=current_th_row, column=10).value = count_boxes
+#                     sheet.cell(row=current_th_row, column=11).value = weight
+#                     current_th_row = current_row
+#                 else:
+#                     current_th_row += 1
+#             else:
+#                 current_th_row += 1
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
+
+
+def remove_extra_rows(sheet, start_row, end_row):
+    for row_num in range(end_row, start_row - 1, -1):
+        sheet.delete_rows(row_num)
+
+
 def main_json_to_excel():
     logging.info("Start main_json_to_excel")
     try:
@@ -393,29 +564,28 @@ def main_json_to_excel():
     except Exception as e:
         logging.error(f"Ошибка при чтении JSON: {e}")
         return
-
     try:
+        current_th_row = 4  # Начало с четвертой строки
+
         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
         path_to_open = os.path.join(os.getcwd(), file_name_today)
         wb = openpyxl.load_workbook(path_to_open)
         sheet = wb.active
         logging.info("Excel-файл успешно открыт")
-    except Exception as e:
-        logging.error(f"Ошибка при открытии Excel-файла: {e}")
-        return
 
-    try:
-        current_th_row = 4  # Начало с четвертой строки
         while current_th_row <= sheet.max_row:
             row = sheet[current_th_row]
             num_th = row[2].value
             if num_th:
                 th = next((item for item in json_data if item['num_th'] == num_th), None)
                 if th:
+                    logging.info(f"Обработка th={num_th}, строка {current_th_row}")
                     sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
                     sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
-                    sheet.cell(row=current_th_row, column=14).value = th['num_car']  # Записываем  для num_th
+                    sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем для num_th th['num_car']
                     current_row = current_th_row + 1
+                    weight = 0.0
+                    count_boxes = 0
                     for addr in th['addresses']:
                         sheet.cell(row=current_row, column=5).value = addr['num_route']
                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
@@ -423,16 +593,255 @@ def main_json_to_excel():
                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
                         sheet.cell(row=current_row, column=11).value = addr['weight']
+                        weight += addr['weight']
+                        count_boxes += addr['count_boxes']
                         current_row += 1
+                    sheet.cell(row=current_th_row, column=10).value = count_boxes
+                    sheet.cell(row=current_th_row, column=11).value = weight
                     current_th_row = current_row
+
+                    logging.info(f"Обработка th={num_th} завершена, строка {current_th_row - 1}")
                 else:
                     current_th_row += 1
             else:
                 current_th_row += 1
+
+
+
         wb.save('reestr_modified.xlsx')
         logging.info("Данные успешно записаны в Excel")
     except Exception as e:
         logging.error(f"Ошибка при обработке данных: {e}")
+
+
+
+#
+# def remove_extra_rows(sheet, start_row, end_row):
+#     for row_num in range(end_row, start_row - 1, -1):
+#         sheet.delete_rows(row_num)
+#
+# def main_json_to_excel():
+#     logging.info("Start main_json_to_excel")
+#     try:
+#         with open('main.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#     try:
+#         current_th_row = 4  # Начало с четвертой строки
+#
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#
+#         while current_th_row <= sheet.max_row:
+#             row = sheet[current_th_row]
+#             num_th = row[2].value
+#             if num_th:
+#                 th = next((item for item in json_data if item['num_th'] == num_th), None)
+#                 if th:
+#                     sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
+#                     sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
+#                     sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем  для num_th  th['num_car']
+#                     current_row = current_th_row + 1
+#                     weight = 0.0
+#                     count_boxes = 0
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         weight += addr['weight']
+#                         count_boxes += addr['count_boxes']
+#                         current_row += 1
+#                     sheet.cell(row=current_th_row, column=10).value = count_boxes
+#                     sheet.cell(row=current_th_row, column=11).value = weight
+#                     current_th_row = current_row
+#
+#                     start_addr_row = current_th_row  # Определите начальную и конечную строку для адресов
+#                     end_addr_row = start_addr_row + len(th['addresses']) - 1
+#
+#                     remove_extra_rows(sheet, start_addr_row, end_addr_row)  # Удаляем лишние строки с адресами
+#
+#                     if len(th['addresses']) > (current_row - start_addr_row):  # Вставляем новые строки для адресов
+#                         for i in range(len(th['addresses']) - (current_row - start_addr_row)):
+#                             sheet.insert_rows(current_row)
+#                             current_row += 1
+#
+#                 else:
+#                     current_th_row += 1
+#             else:
+#                 current_th_row += 1
+#
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
+#
+
+# def main_json_to_excel():
+#     logging.info("Start main_json_to_excel")
+#     try:
+#         with open('main.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#
+#     try:
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     try:
+#         current_th_row = 4  # Начало с четвертой строки
+#         while current_th_row <= sheet.max_row:
+#             row = sheet[current_th_row]
+#             num_th = row[2].value
+#             if num_th:
+#                 th = next((item for item in json_data if item['num_th'] == num_th), None)
+#                 if th:
+#                     sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
+#                     sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
+#                     sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем  для num_th  th['num_car']
+#                     current_row = current_th_row + 1
+#                     weight = 0.0
+#                     count_boxes = 0
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         weight += addr['weight']
+#                         count_boxes += addr['count_boxes']
+#                         current_row += 1
+#                     sheet.cell(row=current_th_row, column=10).value = count_boxes
+#                     sheet.cell(row=current_th_row, column=11).value = weight
+#                     current_th_row = current_row
+#
+#                     start_addr_row = current_th_row  # Определите начальную и конечную строку для адресов
+#                     end_addr_row = start_addr_row + len(th['addresses']) - 1
+#
+#                     remove_extra_rows(sheet, start_addr_row, end_addr_row)  # Удаляем лишние строки с адресами
+#
+#                 else:
+#                     current_th_row += 1
+#             else:
+#                 current_th_row += 1
+#
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
+
+
+# def main_json_to_excel():
+#     logging.info("Start main_json_to_excel")
+#     try:
+#         with open('main.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#
+#     row_ranges = {}
+#
+#     try:
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#
+#         current_tn = None
+#         start_row = None
+#
+#         for row in range(5, sheet.max_row + 1):
+#             num_th = sheet.cell(row=row, column=3).value
+#             first_column_value = sheet.cell(row=row, column=1).value
+#             if first_column_value == "Итого":
+#                 break
+#
+#             if num_th and current_tn != num_th:
+#                 if current_tn is not None:
+#                     row_ranges[current_tn] = (start_row + 1, row - 1)
+#                 current_tn = num_th
+#                 start_row = row
+#
+#         if current_tn is not None:
+#             row_ranges[current_tn] = (start_row, sheet.max_row if first_column_value != "Итого" else row - 1)
+#
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     print(row_ranges)
+#
+#     try:
+#         # for num_th in sorted(row_ranges.keys(), reverse=True):
+#         #     start, end = row_ranges[num_th]
+#         #     for row_num in range(end, start - 1, -1):
+#         #         sheet.delete_rows(row_num)
+#         #     print(f"Удалены строки из диапазона {num_th}")
+#
+#         current_th_row = 4  # Начало с четвертой строки
+#         while current_th_row <= sheet.max_row:
+#             row = sheet[current_th_row]
+#             num_th = row[2].value
+#             if num_th:
+#                 th = next((item for item in json_data if item['num_th'] == num_th), None)
+#                 if th:
+#
+#                     if num_th in row_ranges:  # Удаление диапазона из row_ranges
+#                         del row_ranges[num_th]
+#
+#                     sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
+#                     sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
+#                     sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем  для num_th  th['num_car']
+#                     current_row = current_th_row + 1
+#                     weight = 0.0
+#                     count_boxes = 0
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         weight += addr['weight']
+#                         count_boxes += addr['count_boxes']
+#                         current_row += 1
+#                     sheet.cell(row=current_th_row, column=10).value = count_boxes
+#                     sheet.cell(row=current_th_row, column=11).value = weight
+#                     current_th_row = current_row
+#                 else:
+#                     current_th_row += 1
+#             else:
+#                 current_th_row += 1
+#
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
 
 
 # def main_json_to_excel():
@@ -484,7 +893,7 @@ def main_json_to_excel():
 #     except Exception as e:
 #         logging.error(f"Ошибка при обработке данных: {e}")
 
-#
+
 # def main_json_to_excel():
 #     logging.info("Start main_json_to_excel")
 #     try:
@@ -528,16 +937,57 @@ def main_json_to_excel():
 #     except Exception as e:
 #         logging.error(f"Ошибка при обработке данных: {e}")
 
+#
+# def overweight_json_to_excel():
+#     logging.info("Start overweight_json_to_excel")
+#     try:
+#         with open('overweight.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#
+#     try:
+#         file_name_today = f"reestr_modified.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     try:
+#         total_row = None
+#         for row in sheet.iter_rows(min_row=4, max_col=1):
+#             if row[0].value == "Итого":
+#                 total_row = row[0].row
+#                 break
+#
+#         rows_to_move = []
+#         for row in sheet.iter_rows(min_row=4, max_row=total_row - 1):
+#             num_route = row[4].value
+#             if any(item['num_route'] == num_route for item in json_data):
+#                 rows_to_move.append((row[0].row, [cell.value for cell in row]))
+#
+#         for row_index, _ in sorted(rows_to_move, reverse=True):
+#             sheet.delete_rows(row_index)
+#
+#         for _, row_data in rows_to_move:
+#             sheet.insert_rows(total_row)
+#             for col, value in enumerate(row_data, start=1):
+#                 sheet.cell(row=total_row, column=col).value = value
+#             total_row += 1
+#
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("overweight_json_to_excel: Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
 
-def overweight_json_to_excel():
-    logging.info("Start overweight_json_to_excel")
-    try:
-        with open('overweight.txt', 'r', encoding='utf-8') as json_file:
-            json_data = json.load(json_file)
-        logging.info("Данные JSON успешно загружены")
-    except Exception as e:
-        logging.error(f"Ошибка при чтении JSON: {e}")
-        return
+
+def weight_calculation():
+    logging.info("Start weight_calculation")
 
     try:
         file_name_today = f"reestr_modified.xlsx"
@@ -550,31 +1000,43 @@ def overweight_json_to_excel():
         return
 
     try:
-        total_row = None
-        for row in sheet.iter_rows(min_row=4, max_col=1):
-            if row[0].value == "Итого":
-                total_row = row[0].row
+        row_ranges = {}
+        current_tn = None
+        start_row = None
+
+        # Вычисление диапазонов строк
+        for row in range(5, sheet.max_row + 1):
+            num_th = sheet.cell(row=row, column=3).value
+            first_column_value = sheet.cell(row=row, column=1).value
+            if first_column_value == "Итого":
                 break
 
-        rows_to_move = []
-        for row in sheet.iter_rows(min_row=4, max_row=total_row - 1):
-            num_route = row[4].value
-            if any(item['num_route'] == num_route for item in json_data):
-                rows_to_move.append((row[0].row, [cell.value for cell in row]))
+            if num_th and current_tn != num_th:
+                if current_tn is not None:
+                    row_ranges[current_tn] = (start_row, row - 1)
+                current_tn = num_th
+                start_row = row
 
-        for row_index, _ in sorted(rows_to_move, reverse=True):
-            sheet.delete_rows(row_index)
+        if current_tn is not None:
+            row_ranges[current_tn] = (start_row, sheet.max_row if first_column_value != "Итого" else row - 1)
 
-        for _, row_data in rows_to_move:
-            sheet.insert_rows(total_row)
-            for col, value in enumerate(row_data, start=1):
-                sheet.cell(row=total_row, column=col).value = value
-            total_row += 1
+        # Подсчет суммы и запись ее в соответствующую строку
+        for num_th, (start, end) in row_ranges.items():
+            sum_weight = 0
+            for row in range(start + 1, end + 1):
+                try:
+                    weight = float(sheet.cell(row=row, column=11).value)
+                    sum_weight += weight
+                except (ValueError, TypeError):
+                    pass
+            sheet.cell(row=start, column=11).value = sum_weight
+            logging.info(f"Записана сумма веса {sum_weight} для 'Номера ТН' {num_th} в строке {start}")
 
         wb.save('reestr_modified.xlsx')
         logging.info("Данные успешно записаны в Excel")
     except Exception as e:
         logging.error(f"Ошибка при обработке данных: {e}")
+
 
 
 # def process_json_to_excel():
@@ -781,25 +1243,19 @@ def add_drivers_to_route(main_reestr):
 @dp.callback_query_handler(text="optimalReport")
 async def show_main_report(call: CallbackQuery):
     logging.info("Start show_main_report")
-    main, overweight = get_optimal_json()
+    main = get_optimal_json()
     #print("add_drivers_to_route")
     #print(add_drivers_to_route(main))
 
     with open('main.txt', 'w', encoding='utf-8') as f:
         json.dump(main, f, ensure_ascii=False, indent=4)
 
-    with open('overweight.txt', 'w', encoding='utf-8') as f:
-        json.dump(overweight, f, ensure_ascii=False, indent=4)
-
     print(main)
-    print(overweight)
 
     main_mapping = main_json_to_excel()
 
-    overweight_mapping = overweight_json_to_excel()
-
     print(main_mapping)
-    print(overweight_mapping)
+    #weight_calculation()
 
 # @dp.callback_query_handler(text="optimalReport")
 # async def show_main_report(call: CallbackQuery):
