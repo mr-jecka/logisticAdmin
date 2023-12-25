@@ -772,8 +772,7 @@ def insert_excel_to_db(excel_file_path, db_params):
                 addr["count_boxes"] = int(row[9])
                 addr["weight"] = float(row[10])
                 th["addresses"].append(addr)
-        if th.get("total_weight", 0) >= 250:
-            ths.append(th)
+        ths.append(th)
 
         with conn:
             with conn.cursor() as cursor:
@@ -786,22 +785,17 @@ def insert_excel_to_db(excel_file_path, db_params):
                     th_id = cursor.fetchone()[0]
 
                     for addr in th["addresses"]:
-                        cursor.execute("""
-                            SELECT latitude, longitude, location, priority FROM public.addresses WHERE code_tt = %s;
-                        """, (addr["code_tt"],))
-                        result = cursor.fetchone()
-                        if result:
-                            addr["latitude"], addr["longitude"], addr["location"], addr["priority"] = result
-
+                        coordinates = revers_geocoding_yandex(addr["address_delivery"])
+                        if coordinates:
+                            addr["latitude"], addr["longitude"] = coordinates
                             cursor.execute("""
                                 INSERT INTO address_table (
-                                date_th, num_route, num_shop, code_tt, address_delivery,
-                                 count_boxes, weight, th_id, latitude, longitude, location, priority)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                            """, (addr["date_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
+                                num_th, num_route, num_shop, code_tt, address_delivery,
+                                 count_boxes, weight, th_id, latitude, longitude)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                            """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
                                   addr["address_delivery"], addr["count_boxes"], addr["weight"],
-                                  th_id, addr["latitude"], addr["longitude"], addr["location"], addr["priority"]))
-
+                                  th_id, addr["latitude"], addr["longitude"]))
                             new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
                             new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
                             print("New UUID in reestr_table:", new_uuid_in_reestr)

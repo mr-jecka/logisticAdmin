@@ -26,7 +26,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
+TOKEN = "6490081623:AAHZQIRGri3ceQhqFV8v2T1jnziesXGFp_g"
+# TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
 #TOKEN = "6489569901:AAHBPmIvgYsxj_M_p6x9FnG_RThYEBthcRc" #@MoveTrafficBot
 
 bot = Bot(token=TOKEN)
