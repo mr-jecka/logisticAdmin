@@ -1,5 +1,6 @@
 import tempfile
 import time
+from copy import copy
 
 from openpyxl import Workbook
 from aiogram import Bot, Dispatcher, executor, types
@@ -26,7 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = "6490081623:AAHZQIRGri3ceQhqFV8v2T1jnziesXGFp_g"
+TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
 # TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
 #TOKEN = "6489569901:AAHBPmIvgYsxj_M_p6x9FnG_RThYEBthcRc" #@MoveTrafficBot
 
@@ -402,75 +403,75 @@ def create_json_from_columns(file_path):
     return {key: value for key, value in data.items()}
 
 
+def main_json_to_excel():
+    logging.info("Start main_json_to_excel")
+    try:
+        with open('main.txt', 'r', encoding='utf-8') as json_file:
+            json_data = json.load(json_file)
+        logging.info("Данные JSON успешно загружены")
+    except Exception as e:
+        logging.error(f"Ошибка при чтении JSON: {e}")
+        return
 
-# def main_json_to_excel():
-#     logging.info("Start main_json_to_excel")
-#     row_ranges = {}  # Словарь для хранения диапазонов строк для каждого "Номера ТН"
-#
-#     try:
-#         with open('main.txt', 'r', encoding='utf-8') as json_file:
-#             json_data = json.load(json_file)
-#         logging.info("Данные JSON успешно загружены")
-#     except Exception as e:
-#         logging.error(f"Ошибка при чтении JSON: {e}")
-#         return
-#
-#     try:
-#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
-#         path_to_open = os.path.join(os.getcwd(), file_name_today)
-#         wb = openpyxl.load_workbook(path_to_open)
-#         sheet = wb.active
-#         logging.info("Excel-файл успешно открыт")
-#     except Exception as e:
-#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
-#         return
-#
-#     try:
-#         current_th_row = 4  # Начало с четвертой строки
-#         row_ranges = {}  # Словарь для хранения диапазонов строк для каждого "Номера ТН"
-#
-#         while current_th_row <= sheet.max_row:
-#             row = sheet[current_th_row]
-#             num_th = row[2].value
-#             if num_th:
-#                 th = next((item for item in json_data if item['num_th'] == num_th), None)
-#                 if th:
-#                     logger.info(f"Обрабатывается num_th: {num_th}, Строка Excel: {row[0].row}")
-#
-#                     # Вычисляем диапазон строк для текущего "Номера ТН"
-#                     if num_th not in row_ranges:
-#                         row_ranges[num_th] = (current_th_row, current_th_row)
-#
-#                     sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
-#                     sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
-#                     sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем для num_th th['num_car']
-#                     current_row = current_th_row + 1
-#                     weight = 0.0
-#                     count_boxes = 0
-#
-#                     for addr in th['addresses']:
-#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
-#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
-#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
-#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
-#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
-#                         sheet.cell(row=current_row, column=11).value = addr['weight']
-#                         weight += addr['weight']
-#                         count_boxes += addr['count_boxes']
-#                         current_row += 1
-#
-#                     sheet.cell(row=current_th_row, column=10).value = count_boxes
-#                     sheet.cell(row=current_th_row, column=11).value = weight
-#                     current_th_row = current_row
-#                 else:
-#                     current_th_row += 1
-#             else:
-#                 current_th_row += 1
-#         print(row_ranges)
-#         wb.save('reestr_modified.xlsx')
-#         logging.info("Данные успешно записаны в Excel")
-#     except Exception as e:
-#         logging.error(f"Ошибка при обработке данных: {e}")
+    try:
+        #file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+        file_name_today = f"qwerty.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today)
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        logging.info("Excel-файл успешно открыт")
+    except Exception as e:
+        logging.error(f"Ошибка при открытии Excel-файла: {e}")
+        return
+
+    try:
+        current_th_row = 4  # Начало с четвертой строки
+        row_ranges = {}  # Словарь для хранения диапазонов строк для каждого "Номера ТН"
+
+        while current_th_row <= sheet.max_row:
+            row = sheet[current_th_row]
+            num_th = row[2].value
+            if num_th:
+                print(num_th)
+                th = next((item for item in json_data if item['num_th'] == num_th), None)
+                print(th)
+                if th:
+                    logger.info(f"Обрабатывается num_th: {num_th}, Строка Excel: {row[0].row}")
+                    # Вычисляем диапазон строк для текущего "Номера ТН"
+                    if num_th not in row_ranges:
+                        row_ranges[num_th] = (current_th_row, current_th_row)
+                        print(row_ranges[num_th])
+
+                    sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
+                    sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
+                    sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем для num_th th['num_car']
+                    current_row = current_th_row + 1
+                    weight = 0.0
+                    count_boxes = 0
+
+                    for addr in th['addresses']:
+                        sheet.cell(row=current_row, column=5).value = addr['num_route']
+                        sheet.cell(row=current_row, column=7).value = addr['num_shop']
+                        sheet.cell(row=current_row, column=8).value = addr['code_tt']
+                        sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+                        sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+                        sheet.cell(row=current_row, column=11).value = addr['weight']
+                        weight += addr['weight']
+                        count_boxes += addr['count_boxes']
+                        current_row += 1
+
+                    sheet.cell(row=current_th_row, column=10).value = count_boxes
+                    sheet.cell(row=current_th_row, column=11).value = weight
+                    current_th_row = current_row
+                else:
+                    current_th_row += 1
+            else:
+                current_th_row += 1
+        print(row_ranges)
+        wb.save('qwerty.xlsx')
+        logging.info("Данные успешно записаны в Excel")
+    except Exception as e:
+        logging.error(f"Ошибка при обработке данных: {e}")
 
 #
 # def main_json_to_excel():
@@ -556,8 +557,8 @@ def remove_extra_rows(sheet, start_row, end_row):
         sheet.delete_rows(row_num)
 
 
-def main_json_to_excel():
-    logging.info("Start main_json_to_excel")
+def ranges_addresses_excel_1():
+    logging.info("Start ranges_addresses_excel_1")
     try:
         with open('main.txt', 'r', encoding='utf-8') as json_file:
             json_data = json.load(json_file)
@@ -566,14 +567,6 @@ def main_json_to_excel():
         logging.error(f"Ошибка при чтении JSON: {e}")
         return
     try:
-        current_th_row = 4  # Начало с четвертой строки
-
-        file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
-        path_to_open = os.path.join(os.getcwd(), file_name_today)
-        wb = openpyxl.load_workbook(path_to_open)
-        sheet = wb.active
-        logging.info("Excel-файл успешно открыт")
-
         while current_th_row <= sheet.max_row:
             row = sheet[current_th_row]
             num_th = row[2].value
@@ -607,14 +600,67 @@ def main_json_to_excel():
             else:
                 current_th_row += 1
 
-
-
-        wb.save('reestr_modified.xlsx')
-        logging.info("Данные успешно записаны в Excel")
     except Exception as e:
         logging.error(f"Ошибка при обработке данных: {e}")
 
 
+# def main_json_to_excel():
+#     logging.info("Start main_json_to_excel")
+#     try:
+#         with open('main.txt', 'r', encoding='utf-8') as json_file:
+#             json_data = json.load(json_file)
+#         logging.info("Данные JSON успешно загружены")
+#     except Exception as e:
+#         logging.error(f"Ошибка при чтении JSON: {e}")
+#         return
+#     try:
+#         current_th_row = 4  # Начало с четвертой строки
+#
+#         file_name_today = f"reestr_{(datetime.now().date() + timedelta(days=1)).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#
+#         while current_th_row <= sheet.max_row:
+#             row = sheet[current_th_row]
+#             num_th = row[2].value
+#             if num_th:
+#                 th = next((item for item in json_data if item['num_th'] == num_th), None)
+#                 if th:
+#                     logging.info(f"Обработка th={num_th}, строка {current_th_row}")
+#                     sheet.cell(row=current_th_row, column=12).value = th['driver']  # Записываем водителя для num_th
+#                     sheet.cell(row=current_th_row, column=13).value = "4:00"  # Записываем время для num_th
+#                     sheet.cell(row=current_th_row, column=14).value = "CFD3225"  # Записываем для num_th th['num_car']
+#                     current_row = current_th_row + 1
+#                     weight = 0.0
+#                     count_boxes = 0
+#                     for addr in th['addresses']:
+#                         sheet.cell(row=current_row, column=5).value = addr['num_route']
+#                         sheet.cell(row=current_row, column=7).value = addr['num_shop']
+#                         sheet.cell(row=current_row, column=8).value = addr['code_tt']
+#                         sheet.cell(row=current_row, column=9).value = addr['address_delivery']
+#                         sheet.cell(row=current_row, column=10).value = addr['count_boxes']
+#                         sheet.cell(row=current_row, column=11).value = addr['weight']
+#                         weight += addr['weight']
+#                         count_boxes += addr['count_boxes']
+#                         current_row += 1
+#                     sheet.cell(row=current_th_row, column=10).value = count_boxes
+#                     sheet.cell(row=current_th_row, column=11).value = weight
+#                     current_th_row = current_row
+#
+#                     logging.info(f"Обработка th={num_th} завершена, строка {current_th_row - 1}")
+#                 else:
+#                     current_th_row += 1
+#             else:
+#                 current_th_row += 1
+#
+#         wb.save('reestr_modified.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
+#
+#
 
 #
 # def remove_extra_rows(sheet, start_row, end_row):
@@ -938,7 +984,7 @@ def main_json_to_excel():
 #     except Exception as e:
 #         logging.error(f"Ошибка при обработке данных: {e}")
 
-#
+
 # def overweight_json_to_excel():
 #     logging.info("Start overweight_json_to_excel")
 #     try:
@@ -987,11 +1033,11 @@ def main_json_to_excel():
 #         logging.error(f"Ошибка при обработке данных: {e}")
 
 
-def weight_calculation():
-    logging.info("Start weight_calculation")
+def ranges_addresses_excel():
+    logging.info("Start ranges_addresses_excel")
 
     try:
-        file_name_today = f"reestr_modified.xlsx"
+        file_name_today = f"qwerty.xlsx"
         path_to_open = os.path.join(os.getcwd(), file_name_today)
         wb = openpyxl.load_workbook(path_to_open)
         sheet = wb.active
@@ -1004,40 +1050,152 @@ def weight_calculation():
         row_ranges = {}
         current_tn = None
         start_row = None
+        current_row_number = None
 
         # Вычисление диапазонов строк
         for row in range(5, sheet.max_row + 1):
             num_th = sheet.cell(row=row, column=3).value
             first_column_value = sheet.cell(row=row, column=1).value
+            current_row_number = row
+
             if first_column_value == "Итого":
                 break
 
             if num_th and current_tn != num_th:
                 if current_tn is not None:
-                    row_ranges[current_tn] = (start_row, row - 1)
+                    row_ranges[current_tn] = {
+                        'start_num_th': start_row,
+                        'start_addresses': start_row + 1,
+                        'end': row - 1,
+                        'count': row - start_row - 1
+                    }
                 current_tn = num_th
                 start_row = row
 
         if current_tn is not None:
-            row_ranges[current_tn] = (start_row, sheet.max_row if first_column_value != "Итого" else row - 1)
+            row_ranges[current_tn] = {
+                'start_num_th': start_row,
+                'start_addresses': start_row + 1,
+                'end': sheet.max_row if first_column_value != "Итого" else row - 1,
+                'count': (sheet.max_row if first_column_value != "Итого" else row) - start_row - 1
+            }
+
+        if current_row_number is not None:
+            print(f"Line number with 'итого': {current_row_number}")
+
 
         # Подсчет суммы и запись ее в соответствующую строку
-        for num_th, (start, end) in row_ranges.items():
-            sum_weight = 0
-            for row in range(start + 1, end + 1):
-                try:
-                    weight = float(sheet.cell(row=row, column=11).value)
-                    sum_weight += weight
-                except (ValueError, TypeError):
-                    pass
-            sheet.cell(row=start, column=11).value = sum_weight
-            logging.info(f"Записана сумма веса {sum_weight} для 'Номера ТН' {num_th} в строке {start}")
+        # for num_th, (start, end) in row_ranges.items():
+        #     sum_weight = 0
+        #     for row in range(start + 1, end + 1):
+        #         try:
+        #             weight = float(sheet.cell(row=row, column=11).value)
+        #             sum_weight += weight
+        #         except (ValueError, TypeError):
+        #             pass
+        #     sheet.cell(row=start, column=11).value = sum_weight
+        #     logging.info(f"Записана сумма веса {sum_weight} для 'Номера ТН' {num_th} в строке {start}")
 
-        wb.save('reestr_modified.xlsx')
+        wb.save('qwerty.xlsx')
         logging.info("Данные успешно записаны в Excel")
+        print(row_ranges)
+        return row_ranges, current_row_number
+
     except Exception as e:
         logging.error(f"Ошибка при обработке данных: {e}")
 
+
+def ranges_addresses_excel_finish():
+    logging.info("Start ranges_addresses_excel")
+
+    try:
+        file_name_today = f"qwerty.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today)
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        logging.info("Excel-файл успешно открыт")
+        with open('main.txt', 'r', encoding='utf-8') as json_file:
+            json_data = json.load(json_file)
+        logging.info("Данные JSON успешно загружены")
+    except Exception as e:
+        logging.error(f"Ошибка при открытии Excel-файла: {e}")
+        return
+
+    try:
+        largest_num_th = max(json_data, key=lambda x: x["num_th"])
+        last_code_tt = max(largest_num_th['addresses'], key=lambda x: x['index_number'])['code_tt']
+        print(last_code_tt)
+        found_row_number = None
+
+        for row in sheet.iter_rows(min_row=50):  # предполагая, что первая строка - это заголовки
+            code_tt = row[7].value  # Получение значения из 8-й колонки
+            if code_tt == last_code_tt:
+                found_row_number = row[0].row
+                break
+
+        if found_row_number:
+            print(f"Номер строки с {last_code_tt}: {found_row_number}")
+        else:
+            print(f"Строка с {last_code_tt} не найдена.")
+        wb.save('qwerty.xlsx')
+        logging.info("Данные успешно записаны в Excel")
+        return found_row_number
+
+    except Exception as e:
+        logging.error(f"Ошибка при обработке данных: {e}")
+
+
+# def weight_calculation():
+#     logging.info("Start weight_calculation")
+#
+#     try:
+#         file_name_today = f"qwerty.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     try:
+#         row_ranges = {}
+#         current_tn = None
+#         start_row = None
+#
+#         # Вычисление диапазонов строк
+#         for row in range(5, sheet.max_row + 1):
+#             num_th = sheet.cell(row=row, column=3).value
+#             first_column_value = sheet.cell(row=row, column=1).value
+#             if first_column_value == "Итого":
+#                 break
+#
+#             if num_th and current_tn != num_th:
+#                 if current_tn is not None:
+#                     row_ranges[current_tn] = (start_row + 1, row - 1)
+#                 current_tn = num_th
+#                 start_row = row
+#
+#         if current_tn is not None:
+#             row_ranges[current_tn] = (start_row + 1, sheet.max_row if first_column_value != "Итого" else row - 1)
+#         print(row_ranges)
+#
+#         # Подсчет суммы и запись ее в соответствующую строку
+#         # for num_th, (start, end) in row_ranges.items():
+#         #     sum_weight = 0
+#         #     for row in range(start + 1, end + 1):
+#         #         try:
+#         #             weight = float(sheet.cell(row=row, column=11).value)
+#         #             sum_weight += weight
+#         #         except (ValueError, TypeError):
+#         #             pass
+#         #     sheet.cell(row=start, column=11).value = sum_weight
+#         #     logging.info(f"Записана сумма веса {sum_weight} для 'Номера ТН' {num_th} в строке {start}")
+#
+#         wb.save('qwerty.xlsx')
+#         logging.info("Данные успешно записаны в Excel")
+#     except Exception as e:
+#         logging.error(f"Ошибка при обработке данных: {e}")
 
 
 # def process_json_to_excel():
@@ -1241,22 +1399,747 @@ def add_drivers_to_route(main_reestr):
     return main_reestr
 
 
+# def adjust_rows_for_addresses(addresses_count, row_ranges):
+#     offset = 0
+#
+#     logging.info("Start adjust_rows_for_addresses")
+#
+#     try:
+#         file_name_today = "qwerty.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     # Находим строку с "Итого"
+#     total_row = None
+#     for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row, max_col=1):
+#         if row[0].value == "Итого":
+#             total_row = row[0].row
+#             break
+#
+#     if total_row is None:
+#         logging.error("Строка 'Итого' не найдена")
+#         return
+#
+#     for num_th, count in addresses_count.items():
+#         if num_th not in row_ranges:
+#             # Копируем данные из последней строки с num_th
+#             last_num_th_row = sheet[row_ranges[max(row_ranges, key=row_ranges.get)]['end']]
+#             sheet.insert_rows(total_row)
+#
+#             # Копируем данные
+#             for cell in last_num_th_row:
+#                 sheet[cell.coordinate.replace(str(cell.row), str(total_row))].value = cell.value
+#
+#             # Обновляем row_ranges
+#             row_ranges[num_th] = {'start': total_row, 'end': total_row, 'count': count}
+#             # Обновляем номер строки "Итого"
+#             total_row += 1
+#
+#         # Остальная часть кода без изменений
+#         start, end, current_count = row_ranges[num_th]['start'], row_ranges[num_th]['end'], row_ranges[num_th]['count']
+#         row_difference = count - current_count
+#
+#         if row_difference > 0:
+#             sheet.insert_rows(end + offset + 1, amount=row_difference)
+#             offset += row_difference
+#         elif row_difference < 0:
+#             for _ in range(abs(row_difference)):
+#                 sheet.delete_rows(end + offset)
+#                 offset -= 1
+#
+#         row_ranges[num_th] = {'start': start, 'end': end + offset, 'count': count}
+#
+#     wb.save('qwerty.xlsx')
+#     logging.info("Данные успешно записаны в Excel")
+#
+
+def copy_cell_style(src_cell, dest_cell):
+    # Копирование стиля, включая шрифт, цвет заливки, границы и другие атрибуты
+    dest_cell.font = copy(src_cell.font)
+    dest_cell.border = copy(src_cell.border)
+    dest_cell.fill = copy(src_cell.fill)
+    dest_cell.number_format = src_cell.number_format
+    dest_cell.protection = copy(src_cell.protection)
+    dest_cell.alignment = copy(src_cell.alignment)
+
+
+def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
+
+    offset = 0
+    logging.info("Start adjust_rows_for_addresses")
+
+    try:
+        file_name_today = "qwerty.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today)
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        logging.info("Excel-файл успешно открыт")
+
+        sheet.delete_rows(finish_row)
+
+    except Exception as e:
+        logging.error(f"Ошибка при открытии Excel-файла: {e}")
+        return
+
+    for num_th, count in addresses_count.items():
+        # Пропускаем num_th, которых нет в row_ranges
+        if num_th not in row_ranges:
+            continue
+
+    last_key = list(row_ranges.keys())[-1]
+    last_start_num_th = row_ranges[last_key]['start_num_th']
+    last_start_addresses = row_ranges[last_key]['start_addresses']
+    print("last_start_num_th:", last_start_num_th)
+
+    missing_num_th_count = sum(1 for num_th in addresses_count if num_th not in row_ranges)
+    additional_rows_to_insert = 2 * missing_num_th_count
+    sheet.insert_rows(finish_row, additional_rows_to_insert)
+    # Находим отсутствующие num_th в addresses_count
+    missing_num_th = [num_th for num_th in addresses_count if num_th not in row_ranges]
+
+    # Выводим список отсутствующих num_th
+    print("Отсутствующие num_th:", missing_num_th)
+
+    print(additional_rows_to_insert)
+    if missing_num_th_count == 1:
+        for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+            dest_cell = sheet.cell(row=finish_row, column=col_num)
+            if col_num == 3 and src_cell.value is not None:
+                prefix = "0000-0"
+                num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                if num_part.isdigit():  # Увеличиваем число на 1
+                    new_value = prefix + str(int(num_part) + 1)
+                    dest_cell.value = new_value
+                else:
+                    dest_cell.value = src_cell.value
+            else:
+                dest_cell.value = src_cell.value
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+            dest_cell = sheet.cell(row=finish_row + 1, column=col_num)
+            dest_cell.value = src_cell.value  # Копирование значения ячейки
+            copy_cell_style(src_cell, dest_cell)
+    else:
+        print("Отсутствует номеров ТН:", missing_num_th_count)
+
+    if missing_num_th_count == 2:
+        for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+            dest_cell = sheet.cell(row=finish_row, column=col_num)
+            if col_num == 3 and src_cell.value is not None:
+                prefix = "0000-0"
+                num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                if num_part.isdigit():  # Увеличиваем число на 1
+                    new_value = prefix + str(int(num_part) + 1)
+                    dest_cell.value = new_value
+                else:
+                    dest_cell.value = src_cell.value
+            else:
+                dest_cell.value = src_cell.value
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+            dest_cell = sheet.cell(row=finish_row + 1, column=col_num)
+            dest_cell.value = src_cell.value  # Копирование значения ячейки
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+            dest_cell = sheet.cell(row=finish_row + 2, column=col_num)
+            if col_num == 3 and src_cell.value is not None:
+                prefix = "0000-0"
+                num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                if num_part.isdigit():  # Увеличиваем число на 2
+                    new_value = prefix + str(int(num_part) + 2)
+                    dest_cell.value = new_value
+                else:
+                    dest_cell.value = src_cell.value
+            else:
+                dest_cell.value = src_cell.value
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+            dest_cell = sheet.cell(row=finish_row + 3, column=col_num)
+            dest_cell.value = src_cell.value  # Копирование значения ячейки
+            copy_cell_style(src_cell, dest_cell)
+    else:
+        print("Отсутствует номеров ТН:", missing_num_th_count)
+    # for num_th, count in addresses_count.items():  # Пропускаем num_th, которых нет в row_ranges
+    #     if num_th not in row_ranges:
+    #         continue
+    #
+    #     # Получаем текущий диапазон строк для num_th
+    #     start_num_th, start_addresses, end, current_count = row_ranges[num_th]['start_num_th'], row_ranges[num_th]['start_addresses'], row_ranges[num_th]['end'], row_ranges[num_th]['count']
+    #     # Вычисляем, сколько строк нужно добавить или удалить
+    #     row_difference = count - current_count
+    #
+    #     if row_difference > 0:
+    #         # Добавляем строки, если разница положительная
+    #         sheet.insert_rows(end + offset + 1, amount=row_difference)
+    #         # Обновляем смещение
+    #         offset += row_difference
+    #     elif row_difference < 0:
+    #         # Удаляем строки, если разница отрицательная
+    #         for _ in range(abs(row_difference)):
+    #             sheet.delete_rows(end + offset)
+    #             # При удалении строк смещение уменьшается
+    #             offset -= 1
+    #
+    #     # Обновляем row_ranges с учетом добавленных или удаленных строк
+    #     row_ranges[num_th] = {'start_num_th': start_num_th, 'start_addresses': start_addresses, 'end': end + offset, 'count': count}
+    finish_row += additional_rows_to_insert
+    print(finish_row)
+    wb.save('qwerty.xlsx')
+    logging.info("Данные успешно записаны в Excel")
+
+
+def actually_num_th(addresses_count, row_ranges):
+
+    offset = 0
+
+    logging.info("Start actually_num_th")
+
+    try:
+        file_name_today = "qwerty.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today)
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        logging.info("Excel-файл успешно открыт")
+    except Exception as e:
+        logging.error(f"Ошибка при открытии Excel-файла: {e}")
+        return
+
+    for num_th, count in addresses_count.items():  # Пропускаем num_th, которых нет в row_ranges
+        if num_th not in row_ranges:
+            continue
+
+        # Получаем текущий диапазон строк для num_th
+        start_num_th, start_addresses, end, current_count = row_ranges[num_th]['start_num_th'], row_ranges[num_th]['start_addresses'], row_ranges[num_th]['end'], row_ranges[num_th]['count']
+        # Вычисляем, сколько строк нужно добавить или удалить
+        row_difference = count - current_count
+
+        if row_difference > 0:
+            # Добавляем строки, если разница положительная
+            sheet.insert_rows(end + offset + 1, amount=row_difference)
+            # Обновляем смещение
+            offset += row_difference
+        elif row_difference < 0:
+            # Удаляем строки, если разница отрицательная
+            for _ in range(abs(row_difference)):
+                sheet.delete_rows(end + offset)
+                # При удалении строк смещение уменьшается
+                offset -= 1
+
+        # Обновляем row_ranges с учетом добавленных или удаленных строк
+        row_ranges[num_th] = {'start_num_th': start_num_th, 'start_addresses': start_addresses, 'end': end + offset, 'count': count}
+    wb.save('qwerty.xlsx')
+    logging.info("Данные успешно записаны в Excel")
+
+
+# def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
+#
+#     offset = 0
+#
+#     logging.info("Start adjust_rows_for_addresses")
+#
+#     try:
+#         file_name_today = "qwerty.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     last_key = list(row_ranges.keys())[-1]
+#     last_start_num_th = row_ranges[last_key]['start_num_th']
+#     last_start_addresses = row_ranges[last_key]['start_addresses']
+#     print(last_start_num_th)
+#     sheet.insert_rows(finish_row, 2)  # Вставка 2-х новых строк перед `Итого`
+#
+#     for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+#         dest_cell = sheet.cell(row=finish_row, column=col_num)
+#         if col_num == 3 and src_cell.value is not None:
+#             prefix = "0000-0"
+#             num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+#             if num_part.isdigit():  # Увеличиваем число на 1
+#                 new_value = prefix + str(int(num_part) + 1)
+#                 dest_cell.value = new_value
+#             else:
+#                 dest_cell.value = src_cell.value
+#         else:
+#             dest_cell.value = src_cell.value
+#         copy_cell_style(src_cell, dest_cell)
+#
+#     for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+#         dest_cell = sheet.cell(row=finish_row+1, column=col_num)
+#         dest_cell.value = src_cell.value  # Копирование значения ячейки
+#         copy_cell_style(src_cell, dest_cell)
+#
+#     for num_th, count in addresses_count.items():  # Пропускаем num_th, которых нет в row_ranges
+#         if num_th not in row_ranges:
+#             continue
+#
+#         # Получаем текущий диапазон строк для num_th
+#         start_num_th, start_addresses, end, current_count = row_ranges[num_th]['start_num_th'], row_ranges[num_th]['start_addresses'], row_ranges[num_th]['end'], row_ranges[num_th]['count']
+#         # Вычисляем, сколько строк нужно добавить или удалить
+#         row_difference = count - current_count
+#
+#         if row_difference > 0:
+#             # Добавляем строки, если разница положительная
+#             sheet.insert_rows(end + offset + 1, amount=row_difference)
+#             # Обновляем смещение
+#             offset += row_difference
+#         elif row_difference < 0:
+#             # Удаляем строки, если разница отрицательная
+#             for _ in range(abs(row_difference)):
+#                 sheet.delete_rows(end + offset)
+#                 # При удалении строк смещение уменьшается
+#                 offset -= 1
+#
+#         # Обновляем row_ranges с учетом добавленных или удаленных строк
+#         row_ranges[num_th] = {'start_num_th': start_num_th, 'start_addresses': start_addresses, 'end': end + offset, 'count': count}
+#     print(finish_row)
+#     wb.save('qwerty.xlsx')
+#     logging.info("Данные успешно записаны в Excel")
+
+# def adjust_rows_for_addresses(addresses_count, row_ranges):   Копирует строку
+#     """
+#     Корректирует количество строк в Excel файле для каждого num_th,
+#     чтобы оно соответствовало количеству адресов из addresses_count.
+#     """
+#
+#     offset = 0
+#
+#     logging.info("Start adjust_rows_for_addresses")
+#
+#     try:
+#         file_name_today = "qwerty.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     sheet.insert_rows(125)
+#     for col_num, src_cell in enumerate(sheet[121], start=1):
+#         dest_cell = sheet.cell(row=125, column=col_num)
+#         if col_num == 3 and src_cell.value is not None:
+#             prefix = "0000-0"
+#             num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+#             if num_part.isdigit():
+#                 # Увеличиваем число на 1
+#                 new_value = prefix + str(int(num_part) + 1)
+#                 dest_cell.value = new_value
+#             else:
+#                 dest_cell.value = src_cell.value
+#         else:
+#             dest_cell.value = src_cell.value
+#         copy_cell_style(src_cell, dest_cell)
+#     wb.save('qwerty.xlsx')
+#     logging.info("Данные успешно записаны в Excel")
+
+# def adjust_rows_for_addresses(addresses_count, row_ranges):
+#     """
+#     Корректирует количество строк в Excel файле для каждого num_th,
+#     чтобы оно соответствовало количеству адресов из addresses_count.
+#     """
+#
+#     offset = 0
+#
+#     logging.info("Start adjust_rows_for_addresses")
+#
+#     try:
+#         file_name_today = "qwerty.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#     sheet.insert_rows(125)
+#     for col_num, src_cell in enumerate(sheet[121], start=1):
+#         dest_cell = sheet.cell(row=125, column=col_num)
+#         if col_num == 3 and src_cell.value is not None:
+#             prefix = "0000-0"
+#             num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+#             if num_part.isdigit():
+#                 # Увеличиваем число на 1
+#                 new_value = prefix + str(int(num_part) + 1)
+#                 dest_cell.value = new_value
+#             else:
+#                 dest_cell.value = src_cell.value
+#         else:
+#             dest_cell.value = src_cell.value
+#         copy_cell_style(src_cell, dest_cell)
+#     wb.save('qwerty.xlsx')
+#     logging.info("Данные успешно записаны в Excel")
+
+    #
+    # total_row = None
+    # for row in sheet.iter_rows(min_row=4, max_col=1):
+    #     if row[0].value == "Итого":
+    #         total_row = row[0].row
+    #         break
+    #
+    # print(total_row)
+    # sheet.insert_rows(total_row, amount=2)
+    # total_row += 2
+    # print(total_row)
+    #
+    # if total_row is None:
+    #     logging.error("Строка 'Итого' не найдена")
+    #     return
+    #
+    # difference = len(addresses_count) - len(row_ranges)
+    # print(difference)
+    #
+    # if difference > 0:
+    #     # Находим последний num_th в row_ranges
+    #     last_num_th = max(row_ranges, key=lambda x: row_ranges[x]['end'])
+    #     start_row = row_ranges[last_num_th]['start']
+    #
+    #     # Копируем строки start и start - 1
+    #     for row_num in range(start_row - 1, start_row + 1):
+    #         sheet.insert_rows(sheet.max_row + 1)
+    #         for col_num, cell in enumerate(sheet.iter_cols(min_col=1, max_col=sheet.max_column, min_row=row_num, max_row=row_num), start=1):
+    #             sheet.cell(row=sheet.max_row, column=col_num, value=cell[0].value)
+    #
+    # print(difference)
+    #
+    # for num_th, count in addresses_count.items():
+    #     # Пропускаем num_th, которых нет в row_ranges
+    #     if num_th not in row_ranges:
+    #         continue
+    #
+    #     # Получаем текущий диапазон строк для num_th
+    #     start, end, current_count = row_ranges[num_th]['start'], row_ranges[num_th]['end'], row_ranges[num_th]['count']
+    #     # Вычисляем, сколько строк нужно добавить или удалить
+    #     row_difference = count - current_count
+    #
+    #     if row_difference > 0:
+    #         # Добавляем строки, если разница положительная
+    #         sheet.insert_rows(end + offset + 1, amount=row_difference)
+    #         # Обновляем смещение
+    #         offset += row_difference
+    #     elif row_difference < 0:
+    #         # Удаляем строки, если разница отрицательная
+    #         for _ in range(abs(row_difference)):
+    #             sheet.delete_rows(end + offset)
+    #             # При удалении строк смещение уменьшается
+    #             offset -= 1
+    #
+    #     # Обновляем row_ranges с учетом добавленных или удаленных строк
+    #     row_ranges[num_th] = {'start': start, 'end': end + offset, 'count': count}
+
+    # wb.save('qwerty.xlsx')
+    # logging.info("Данные успешно записаны в Excel")
+
+
+def copy_cell_style(src_cell, dest_cell):
+    if src_cell.has_style:
+        dest_cell.font = copy(src_cell.font)
+        dest_cell.border = copy(src_cell.border)
+        dest_cell.fill = copy(src_cell.fill)
+        dest_cell.number_format = src_cell.number_format
+        dest_cell.protection = copy(src_cell.protection)
+        dest_cell.alignment = copy(src_cell.alignment)
+
+
+def is_merged_cell(sheet, cell):
+    """ Проверка, является ли ячейка частью объединенной области """
+    for merged_range in sheet.merged_cells.ranges:
+        if cell.coordinate in merged_range.coord:
+            return True
+    return False
+
+def get_start_cell_of_merged_range(sheet, cell):
+    """ Получение начальной ячейки объединенной области """
+    for merged_range in sheet.merged_cells.ranges:
+        if cell.coordinate in merged_range.coord:
+            return sheet.cell(merged_range.min_row, merged_range.min_col)
+    return None
+
+
+def copy_cell_style_2(src_cell, dest_cell, sheet):
+    if src_cell.has_style:
+        dest_cell.font = copy(src_cell.font)
+        dest_cell.border = copy(src_cell.border)
+        dest_cell.fill = copy(src_cell.fill)
+        dest_cell.number_format = src_cell.number_format
+        dest_cell.protection = copy(src_cell.protection)
+        dest_cell.alignment = copy(src_cell.alignment)
+
+
+def insert_finish_row(found_row_number):
+    logging.info("Start insert_finish_row")
+
+    try:
+        file_name_today_1 = f"reestr_{(datetime.now().date()).strftime('%d_%m')}.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today_1)
+        wb1 = openpyxl.load_workbook(path_to_open)
+        sheet1 = wb1.active
+        logging.info("Первый Excel-файл успешно открыт")
+
+        current_row_number = None
+
+        for row in range(5, sheet1.max_row + 1):
+            first_column_value = sheet1.cell(row=row, column=1).value
+            if first_column_value == "Итого":
+                current_row_number = row
+                break
+
+        if current_row_number is None:
+            logging.error("Строка 'Итого' не найдена")
+            return
+
+        # Сохранение данных строки "Итого"
+        total_row_data = [sheet1.cell(row=current_row_number, column=col).value for col in range(1, sheet1.max_column + 1)]
+
+    except Exception as e:
+        logging.error(f"Ошибка при открытии первого Excel-файла: {e}")
+        return
+
+    try:
+        file_name_today_2 = "qwerty.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today_2)
+        wb2 = openpyxl.load_workbook(path_to_open)
+        sheet2 = wb2.active
+        logging.info("Второй Excel-файл успешно открыт")
+
+        # Вставка данных в found_row_number + 1
+        for col_num, value in enumerate(total_row_data, start=1):
+            dest_cell = sheet2.cell(row=found_row_number + 1, column=col_num)
+            src_cell = sheet1.cell(row=current_row_number, column=col_num)
+
+            if is_merged_cell(sheet2, dest_cell):
+                base_cell = get_start_cell_of_merged_range(sheet2, dest_cell)
+                if base_cell:
+                    base_cell.value = value
+                    copy_cell_style_2(src_cell, base_cell, sheet2)
+            else:
+                dest_cell.value = value
+                copy_cell_style_2(src_cell, dest_cell, sheet2)
+
+        wb2.save(path_to_open)  # Сохранение изменений
+
+    except Exception as e:
+        logging.error(f"Ошибка при открытии второго Excel-файла: {e}")
+        return
+
+    logging.info("Строка 'Итого' успешно перенесена")
+
+
+# def insert_finish_row(found_row_number):
+#     logging.info("Start insert_finish_row")
+#
+#     try:
+#         file_name_today_1 = f"reestr_{(datetime.now().date()).strftime('%d_%m')}.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today_1)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#
+#         current_row_number = None
+#
+#         for row in range(5, sheet.max_row + 1):
+#             num_th = sheet.cell(row=row, column=3).value
+#             first_column_value = sheet.cell(row=row, column=1).value
+#             current_row_number = row
+#
+#             if first_column_value == "Итого":
+#                 break
+#
+#         print(current_row_number)
+#
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#
+#     try:
+#         file_name_today_2 = f"qwerty.xlsx"
+#         path_to_open = os.path.join(os.getcwd(), file_name_today_2)
+#         wb = openpyxl.load_workbook(path_to_open)
+#         sheet = wb.active
+#         logging.info("Excel-файл успешно открыт")
+#
+#         for col_num, src_cell in enumerate(sheet[current_row_number], start=1):
+#             dest_cell = sheet.cell(row=found_row_number + 1, column=col_num)
+#             dest_cell.value = src_cell.value  # Копирование значения ячейки
+#             copy_cell_style(src_cell, dest_cell)
+#
+#     except Exception as e:
+#         logging.error(f"Ошибка при открытии Excel-файла: {e}")
+#         return
+#
+#
+#     # Вычисление диапазонов строк
+#     for row in range(5, sheet.max_row + 1):
+#         num_th = sheet.cell(row=row, column=3).value
+#         first_column_value = sheet.cell(row=row, column=1).value
+#         current_row_number = row
+#
+#         if first_column_value == "Итого":
+#             break
+#
+#     print(current_row_number)
+#
+#     for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+#         dest_cell = sheet.cell(row=finish_row, column=col_num)
+#         if col_num == 3 and src_cell.value is not None:
+#             prefix = "0000-0"
+#             num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+#             if num_part.isdigit():  # Увеличиваем число на 1
+#                 new_value = prefix + str(int(num_part) + 1)
+#                 dest_cell.value = new_value
+#             else:
+#                 dest_cell.value = src_cell.value
+#         else:
+#             dest_cell.value = src_cell.value
+#         copy_cell_style(src_cell, dest_cell)
+#
+#     for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+#         dest_cell = sheet.cell(row=finish_row + 1, column=col_num)
+#         dest_cell.value = src_cell.value  # Копирование значения ячейки
+#         copy_cell_style(src_cell, dest_cell)
+#
+#     # print(additional_rows_to_insert)
+#     # if missing_num_th_count == 1:
+#     #     for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+#     #         dest_cell = sheet.cell(row=finish_row, column=col_num)
+#     #         if col_num == 3 and src_cell.value is not None:
+#     #             prefix = "0000-0"
+#     #             num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+#     #             if num_part.isdigit():  # Увеличиваем число на 1
+#     #                 new_value = prefix + str(int(num_part) + 1)
+#     #                 dest_cell.value = new_value
+#     #             else:
+#     #                 dest_cell.value = src_cell.value
+#     #         else:
+#     #             dest_cell.value = src_cell.value
+#     #         copy_cell_style(src_cell, dest_cell)
+#     #
+#     #     for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+#     #         dest_cell = sheet.cell(row=finish_row + 1, column=col_num)
+#     #         dest_cell.value = src_cell.value  # Копирование значения ячейки
+#     #         copy_cell_style(src_cell, dest_cell)
+#     # else:
+#     #     print("Отсутствует номеров ТН:", missing_num_th_count)
+#     #
+#     # if missing_num_th_count == 2:
+#     #     for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+#     #         dest_cell = sheet.cell(row=finish_row, column=col_num)
+#     #         if col_num == 3 and src_cell.value is not None:
+#     #             prefix = "0000-0"
+#     #             num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+#     #             if num_part.isdigit():  # Увеличиваем число на 1
+#     #                 new_value = prefix + str(int(num_part) + 1)
+#     #                 dest_cell.value = new_value
+#     #             else:
+#     #                 dest_cell.value = src_cell.value
+#     #         else:
+#     #             dest_cell.value = src_cell.value
+#     #         copy_cell_style(src_cell, dest_cell)
+#     #
+#     #     for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+#     #         dest_cell = sheet.cell(row=finish_row + 1, column=col_num)
+#     #         dest_cell.value = src_cell.value  # Копирование значения ячейки
+#     #         copy_cell_style(src_cell, dest_cell)
+#     #
+#     #     for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+#     #         dest_cell = sheet.cell(row=finish_row + 2, column=col_num)
+#     #         if col_num == 3 and src_cell.value is not None:
+#     #             prefix = "0000-0"
+#     #             num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+#     #             if num_part.isdigit():  # Увеличиваем число на 2
+#     #                 new_value = prefix + str(int(num_part) + 2)
+#     #                 dest_cell.value = new_value
+#     #             else:
+#     #                 dest_cell.value = src_cell.value
+#     #         else:
+#     #             dest_cell.value = src_cell.value
+#     #         copy_cell_style(src_cell, dest_cell)
+#     #
+#     #     for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+#     #         dest_cell = sheet.cell(row=finish_row + 3, column=col_num)
+#     #         dest_cell.value = src_cell.value  # Копирование значения ячейки
+#     #         copy_cell_style(src_cell, dest_cell)
+#     # else:
+#     #     print("Отсутствует номеров ТН:", missing_num_th_count)
+#     # for num_th, count in addresses_count.items():  # Пропускаем num_th, которых нет в row_ranges
+#     #     if num_th not in row_ranges:
+#     #         continue
+#     #
+#     #     # Получаем текущий диапазон строк для num_th
+#     #     start_num_th, start_addresses, end, current_count = row_ranges[num_th]['start_num_th'], row_ranges[num_th]['start_addresses'], row_ranges[num_th]['end'], row_ranges[num_th]['count']
+#     #     # Вычисляем, сколько строк нужно добавить или удалить
+#     #     row_difference = count - current_count
+#     #
+#     #     if row_difference > 0:
+#     #         # Добавляем строки, если разница положительная
+#     #         sheet.insert_rows(end + offset + 1, amount=row_difference)
+#     #         # Обновляем смещение
+#     #         offset += row_difference
+#     #     elif row_difference < 0:
+#     #         # Удаляем строки, если разница отрицательная
+#     #         for _ in range(abs(row_difference)):
+#     #             sheet.delete_rows(end + offset)
+#     #             # При удалении строк смещение уменьшается
+#     #             offset -= 1
+#     #
+#     #     # Обновляем row_ranges с учетом добавленных или удаленных строк
+#     #     row_ranges[num_th] = {'start_num_th': start_num_th, 'start_addresses': start_addresses, 'end': end + offset, 'count': count}
+#     wb.save(file_name_today)
+#     logging.info("Данные успешно записаны в Excel")
+
+
 @dp.callback_query_handler(text="optimalReport")
 async def show_main_report(call: CallbackQuery):
     logging.info("Start show_main_report")
-    main = get_optimal_json()
-    #print("add_drivers_to_route")
-    #print(add_drivers_to_route(main))
-
+    main_json, addresses_count = get_optimal_json()
     with open('main.txt', 'w', encoding='utf-8') as f:
-        json.dump(main, f, ensure_ascii=False, indent=4)
+        json.dump(main_json, f, ensure_ascii=False, indent=4)
+    print(main_json)
+    addresses_count = {k: addresses_count[k] for k in sorted(addresses_count.keys())}
+    print(addresses_count)
+    excel_count, finish_row = ranges_addresses_excel()
+    adjust_rows_for_addresses(addresses_count, excel_count, finish_row)
+    actually_num_th(addresses_count, excel_count)
+    main_json_to_excel()
+    time.sleep(2)
+    found_number = ranges_addresses_excel_finish()
+    time.sleep(2)
+    insert_finish_row(found_number)
 
-    print(main)
 
-    main_mapping = main_json_to_excel()
-
-    print(main_mapping)
-    #weight_calculation()
+# @dp.callback_query_handler(text="optimalReport")
+# async def show_main_report(call: CallbackQuery):
+#     logging.info("Start show_main_report")
+#     main_json, addresses_count = get_optimal_json()
+#     #print("add_drivers_to_route")
+#     #print(add_drivers_to_route(main))
+#
+#     with open('main.txt', 'w', encoding='utf-8') as f:
+#         json.dump(main_json, f, ensure_ascii=False, indent=4)
+#
+#     print(main_json)
+#
+#     print(addresses_count)
+#
+#     #main_mapping = main_json_to_excel()
+#
+#     #print(main_mapping)
+#     ranges_addresses_excel()
 
 # @dp.callback_query_handler(text="optimalReport")
 # async def show_main_report(call: CallbackQuery):
@@ -1275,7 +2158,6 @@ async def show_main_report(call: CallbackQuery):
 
 from collections import Counter
 import logging
-import copy
 
 
 def fix_duplicate_rows(sheet, json_data, current_order):

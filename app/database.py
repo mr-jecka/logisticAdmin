@@ -317,12 +317,19 @@ def get_optimal_json():
         # last_names = session.query(AddressTable.last_name).filter(func.date(AddressTable.date_th) == today).distinct().all()
 
         route_entries = []
+        addresses_count = {}
 
         for entry in reestr_entries:
             num_th = entry.num_th
             addresses = filter_addresses(session, num_th)
 
             address_list = []
+
+            driver = session.query(AddressTable.last_name).filter(AddressTable.num_th == num_th).first()
+            driver_name = driver.last_name if driver else None
+
+            if driver_name is None:
+                logging.warning(f"Фамилия водителя в маршруте {num_th} равна None")
 
             for addr in addresses:
                 weight = convert_decimal(addr.weight)
@@ -341,20 +348,23 @@ def get_optimal_json():
 
             address_list.sort(key=lambda x: x['index_number'])
 
+            addresses_count[num_th] = len(address_list)
+
             route_entry = {
                 "num_th": num_th,
                 "date_th": today.strftime('%d.%m.%Y'),
-                "driver": None,
+                "driver": driver_name,
                 "num_car": None,
                 "addresses": address_list
             }
 
             route_entries.append(route_entry)
 
-        return route_entries
+        return route_entries, addresses_count
 
     except Exception as e:
-        print("An error occurred:", e)
+        logging.error(f"Произошла ошибка: {e}")
+        logging.exception("Ошибка во время выполнения кода:")
         return []
 
 
@@ -772,7 +782,8 @@ def insert_excel_to_db(excel_file_path, db_params):
                 addr["count_boxes"] = int(row[9])
                 addr["weight"] = float(row[10])
                 th["addresses"].append(addr)
-        ths.append(th)
+        if th.get("total_weight", 0) >= 250:
+            ths.append(th)
 
         with conn:
             with conn.cursor() as cursor:
@@ -785,17 +796,22 @@ def insert_excel_to_db(excel_file_path, db_params):
                     th_id = cursor.fetchone()[0]
 
                     for addr in th["addresses"]:
-                        coordinates = revers_geocoding_yandex(addr["address_delivery"])
-                        if coordinates:
-                            addr["latitude"], addr["longitude"] = coordinates
+                        cursor.execute("""
+                            SELECT latitude, longitude, location, priority FROM public.addresses WHERE code_tt = %s;
+                        """, (addr["code_tt"],))
+                        result = cursor.fetchone()
+                        if result:
+                            addr["latitude"], addr["longitude"], addr["location"], addr["priority"] = result
+
                             cursor.execute("""
                                 INSERT INTO address_table (
-                                num_th, num_route, num_shop, code_tt, address_delivery,
-                                 count_boxes, weight, th_id, latitude, longitude)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                            """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
+                                date_th, num_route, num_shop, code_tt, address_delivery,
+                                 count_boxes, weight, th_id, latitude, longitude, location, priority)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                            """, (addr["date_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
                                   addr["address_delivery"], addr["count_boxes"], addr["weight"],
-                                  th_id, addr["latitude"], addr["longitude"]))
+                                  th_id, addr["latitude"], addr["longitude"], addr["location"], addr["priority"]))
+
                             new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
                             new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
                             print("New UUID in reestr_table:", new_uuid_in_reestr)
@@ -808,6 +824,91 @@ def insert_excel_to_db(excel_file_path, db_params):
         return False, f"Error inserting data into the database: {e}"
     finally:
         conn.close()
+
+
+# def insert_excel_to_db(excel_file_path, db_params):
+#     try:
+#         conn = psycopg2.connect(**db_params)
+#         cursor = conn.cursor()
+#     except psycopg2.Error as e:
+#         logging.error(f"Error connecting to the database: {e}")
+#         return
+#     try:
+#         wb = openpyxl.load_workbook(excel_file_path, data_only=True)
+#         sheet = wb.active
+#
+#         find_and_delete_total(sheet, start_row=5)
+#
+#
+#         ths = []
+#         th = {}
+#
+#         for row in sheet.iter_rows(min_row=5, values_only=True):
+#             if row[2] is not None:
+#                 logging.info(f"Processing row: {row}")
+#                 if len(th.keys()) != 0:
+#                     if th.get("total_weight", 0) >= 250:  # Проверяем вес предыдущего num_th
+#                         ths.append(th)
+#                 th = {}
+#                 th["num_th"] = row[2]
+#                 date_str = row[3]
+#                 if isinstance(date_str, datetime):
+#                     date_str = date_str.strftime('%d.%m.%Y')
+#                 try:
+#                     date_th = datetime.strptime(date_str, '%d.%m.%Y')
+#                     th["date_th"] = date_th.strftime('%Y-%m-%d')
+#                 except ValueError:
+#                     logging.error(f"Error converting date string: {date_str}")
+#                 th["total_count_boxes"] = int(row[9])
+#                 th["total_weight"] = float(row[10])
+#                 th["addresses"] = []
+#             else:
+#                 addr = {}
+#                 addr["num_th"] = th["num_th"]
+#                 addr["date_th"] = th["date_th"]
+#                 addr["num_route"] = row[4]
+#                 addr["num_shop"] = row[6]
+#                 addr["code_tt"] = row[7]
+#                 addr["address_delivery"] = row[8]
+#                 addr["count_boxes"] = int(row[9])
+#                 addr["weight"] = float(row[10])
+#                 th["addresses"].append(addr)
+#         ths.append(th)
+#
+#         with conn:
+#             with conn.cursor() as cursor:
+#                 for th in ths:
+#                     cursor.execute("""
+#                         INSERT INTO reestr_table (num_th, date_th, total_count_boxes, total_weight)
+#                         VALUES (%s, %s, %s, %s)
+#                         RETURNING id;
+#                     """, (th["num_th"], th["date_th"], th["total_count_boxes"], th["total_weight"]))
+#                     th_id = cursor.fetchone()[0]
+#
+#                     for addr in th["addresses"]:
+#                         coordinates = revers_geocoding_yandex(addr["address_delivery"])
+#                         if coordinates:
+#                             addr["latitude"], addr["longitude"] = coordinates
+#                             cursor.execute("""
+#                                 INSERT INTO address_table (
+#                                 num_th, num_route, num_shop, code_tt, address_delivery,
+#                                  count_boxes, weight, th_id, latitude, longitude)
+#                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+#                             """, (addr["num_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
+#                                   addr["address_delivery"], addr["count_boxes"], addr["weight"],
+#                                   th_id, addr["latitude"], addr["longitude"]))
+#                             new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
+#                             new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
+#                             print("New UUID in reestr_table:", new_uuid_in_reestr)
+#                             print("New UUID in address_table:", new_uuid_in_address)
+#
+#         logging.info("Data inserted into the database successfully")
+#         return True, "Data inserted into the database successfully"
+#     except Exception as e:
+#         logging.error(f"Error inserting data into the database: {e}")
+#         return False, f"Error inserting data into the database: {e}"
+#     finally:
+#         conn.close()
 
 
 def revers_geocoding_yandex(address):
@@ -1256,8 +1357,20 @@ def assign_drivers_to_addresses():
             current_weight = driver_weights[driver_name]
             print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
 
-            if current_weight + weight <= 3150:
-                if driver_location == 7 and int(location) == 7:
+            if current_weight + weight <= 3200:
+                if driver_location == 10 and int(location) == 10:
+                    assigned_driver = driver_name
+                elif driver_location == 10 and int(location) == 9 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 9 and int(location) == 9:
+                    assigned_driver = driver_name
+                elif driver_location == 9 and int(location) == 8 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 8 and int(location) == 8:
+                    assigned_driver = driver_name
+                elif driver_location == 8 and int(location) == 7 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 7 and int(location) == 7:
                     assigned_driver = driver_name
                 elif driver_location == 7 and int(location) == 6 and priority < 50:
                     assigned_driver = driver_name
