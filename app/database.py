@@ -1343,72 +1343,112 @@ def assign_drivers_to_addresses():
     details_by_code_tt = calculate_weights_and_get_driver_last_names()
 
     drivers = session.query(DriversTable).order_by(desc(DriversTable.location)).all()
-    driver_list = {driver.last_name: driver.location for driver in drivers}
+    driver_list = {driver.last_name: [driver.location, 0.0] for driver in drivers}
 
-    for details in sorted(details_by_code_tt, key=lambda x: (x['location'], x['weight']), reverse=True):
+    drivers_all = {}
+    for driver in drivers:
+        if drivers_all.get(driver.location) is None:
+            drivers_all[driver.location] = {driver.last_name: {"weight": 0.0, "addreses": []}}
+        else:
+            drivers_all[driver.location][driver.last_name] = {"weight": 0.0, "addreses": []}
+
+    for details in sorted(details_by_code_tt, key=lambda x: (x['location'], x['priority']), reverse=True):
         code_tt = details['code_tt']
         weight = float(details['weight'])
         location = details['location']
         priority = details['priority']
 
         assigned_driver = None
-        for driver_name, driver_location in driver_list.items():
-            print(f"Проверка задания {code_tt} для водителя {driver_name}")
-            current_weight = driver_weights[driver_name]
-            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+        if location == '0':
+            drivers_on_1_2 = {}
+            drivers_on_1_2.update(drivers_all[1])
+            drivers_on_1_2.update(drivers_all[2])
+            for driver_on_location in drivers_on_1_2.keys():
+                if drivers_on_1_2[driver_on_location]["weight"] + weight <= 3200.0 and drivers_on_1_2[driver_on_location]["weight"] != 0.0:
+                    assigned_driver = driver_on_location
+                    for location_find in drivers_all.keys():
+                        for driver_in_location in drivers_all[location_find].keys():
+                            if driver_in_location == driver_on_location:
+                                drivers_all[location_find][driver_in_location]["weight"] += weight
+                                drivers_all[location_find][driver_in_location]["addreses"].append(details)
+                    break
+        else:
+            if priority < 50 and int(location) != len(drivers_all.keys()):
+                drivers_on_location = drivers_all[int(location)+1]
+                for driver_on_location in drivers_on_location.keys():
+                    if drivers_on_location[driver_on_location]["weight"] + weight <= 3200.0:
+                        assigned_driver = driver_on_location
+                        drivers_on_location[driver_on_location]["weight"] += weight
+                        drivers_on_location[driver_on_location]["addreses"].append(details)
+                        break
+            else:
+                drivers_on_location = drivers_all[int(location)]
+                for driver_on_location in drivers_on_location.keys():
+                    if drivers_on_location[driver_on_location]["weight"] + weight <= 3200.0:
+                        assigned_driver = driver_on_location
+                        drivers_on_location[driver_on_location]["weight"] += weight
+                        drivers_on_location[driver_on_location]["addreses"].append(details)
+                        break
+        if not assigned_driver:
+            print(f"Водители по локации {location} загружены полностью")
 
-            if current_weight + weight <= 3200:
-                if driver_location == 10 and int(location) == 10:
-                    assigned_driver = driver_name
-                elif driver_location == 10 and int(location) == 9 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 9 and int(location) == 9:
-                    assigned_driver = driver_name
-                elif driver_location == 9 and int(location) == 8 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 8 and int(location) == 8:
-                    assigned_driver = driver_name
-                elif driver_location == 8 and int(location) == 7 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 7 and int(location) == 7:
-                    assigned_driver = driver_name
-                elif driver_location == 7 and int(location) == 6 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 6 and int(location) == 6:
-                    assigned_driver = driver_name
-                elif driver_location == 6 and int(location) == 5 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 5 and int(location) == 5:
-                    assigned_driver = driver_name
-                elif driver_location == 5 and int(location) == 4 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 4 and int(location) == 4:
-                    assigned_driver = driver_name
-                elif driver_location == 4 and int(location) == 5 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 4 and int(location) == 3 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 3 and int(location) == 3:
-                    assigned_driver = driver_name
-                elif driver_location == 3 and int(location) == 2 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 3 and int(location) == 0 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 2 and int(location) == 2:
-                    assigned_driver = driver_name
-                elif driver_location == 2 and int(location) == 1 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 2 and int(location) == 0 and priority < 50:
-                    assigned_driver = driver_name
-                elif driver_location == 1 and int(location) == 1:
-                    assigned_driver = driver_name
-                elif driver_location == 1 and int(location) == 0:
-                    assigned_driver = driver_name
-
-            if assigned_driver:
-                driver_weights[driver_name] += weight
-                driver_locations[driver_name] = location
-                break
+        # for driver_name, driver_location in driver_list.items():
+        #     print(f"Проверка задания {code_tt} для водителя {driver_name}")
+        #     current_weight = driver_weights[driver_name]
+        #     print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+        #
+        #     if current_weight + weight <= 3200:
+        #         if driver_location == 10 and int(location) == 10:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 10 and int(location) == 9 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 9 and int(location) == 9:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 9 and int(location) == 8 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 8 and int(location) == 8:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 8 and int(location) == 7 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 7 and int(location) == 7:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 7 and int(location) == 6 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 6 and int(location) == 6:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 6 and int(location) == 5 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 5 and int(location) == 5:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 5 and int(location) == 4 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 4 and int(location) == 4:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 4 and int(location) == 5 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 4 and int(location) == 3 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 3 and int(location) == 3:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 3 and int(location) == 2 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 3 and int(location) == 0 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 2 and int(location) == 2:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 2 and int(location) == 1 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 2 and int(location) == 0 and priority < 50:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 1 and int(location) == 1:
+        #             assigned_driver = driver_name
+        #         elif driver_location == 1 and int(location) == 0:
+        #             assigned_driver = driver_name
+        #
+        #     if assigned_driver:
+        #         driver_weights[driver_name] += weight
+        #         driver_locations[driver_name] = location
+        #         break
 
         driver_assignments[code_tt] = assigned_driver
 
@@ -1419,6 +1459,17 @@ def assign_drivers_to_addresses():
 
         current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
         print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+    # for location_driver in drivers_all.keys():
+    #     if location_driver != 1:
+    #         for drivers_with_weight_now in drivers_all[location_driver].keys():
+    #             if drivers_all[location_driver][drivers_with_weight_now]["weight"] > 3000.0:
+    #                 continue
+    #             else:
+    #                 for drivers_with_weight_low in drivers_all[location_driver - 1].keys():
+    #                     for address in drivers_all[location_driver][drivers_with_weight_low]['addreses']:
+    #                         if address['priority'] < 50:
+    #                             drivers_all[location_driver][drivers_with_weight_now]['addreses'].append(address)
+    #                             drivers_all[location_driver][drivers_with_weight_low]['addreses'].remove(address)
 
     return driver_assignments
 
