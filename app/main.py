@@ -1124,10 +1124,10 @@ def ranges_addresses_excel_finish():
     try:
         largest_num_th = max(json_data, key=lambda x: x["num_th"])
         last_code_tt = max(largest_num_th['addresses'], key=lambda x: x['index_number'])['code_tt']
-        print(last_code_tt)
+        print(f"последний code_tt в json из БД: {last_code_tt}")
         found_row_number = None
 
-        for row in sheet.iter_rows(min_row=50):  # предполагая, что первая строка - это заголовки
+        for row in sheet.iter_rows(min_row=50):  # первая строка - это заголовки
             code_tt = row[7].value  # Получение значения из 8-й колонки
             if code_tt == last_code_tt:
                 found_row_number = row[0].row
@@ -1136,7 +1136,7 @@ def ranges_addresses_excel_finish():
         if found_row_number:
             print(f"Номер строки с {last_code_tt}: {found_row_number}")
         else:
-            print(f"Строка с {last_code_tt} не найдена.")
+            print(f"Строка с {last_code_tt} не найдена в первом Excel-файле")
         wb.save('qwerty.xlsx')
         logging.info("Данные успешно записаны в Excel")
         return found_row_number
@@ -1510,8 +1510,9 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
         for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
             dest_cell = sheet.cell(row=finish_row, column=col_num)
             if col_num == 3 and src_cell.value is not None:
-                prefix = "0000-0"
+
                 num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                prefix = "0000-" + "0" * (6-len(str(int(num_part))))
                 if num_part.isdigit():  # Увеличиваем число на 1
                     new_value = prefix + str(int(num_part) + 1)
                     dest_cell.value = new_value
@@ -1532,8 +1533,8 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
         for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
             dest_cell = sheet.cell(row=finish_row, column=col_num)
             if col_num == 3 and src_cell.value is not None:
-                prefix = "0000-0"
                 num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                prefix = "0000-" + "0" * (6-len(str(int(num_part))))
                 if num_part.isdigit():  # Увеличиваем число на 1
                     new_value = prefix + str(int(num_part) + 1)
                     dest_cell.value = new_value
@@ -1551,8 +1552,8 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
         for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
             dest_cell = sheet.cell(row=finish_row + 2, column=col_num)
             if col_num == 3 and src_cell.value is not None:
-                prefix = "0000-0"
                 num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                prefix = "0000-" + "0" * (6-len(str(int(num_part))))
                 if num_part.isdigit():  # Увеличиваем число на 2
                     new_value = prefix + str(int(num_part) + 2)
                     dest_cell.value = new_value
@@ -1612,32 +1613,41 @@ def actually_num_th(addresses_count, row_ranges):
     except Exception as e:
         logging.error(f"Ошибка при открытии Excel-файла: {e}")
         return
-
+    main_offset = 0
     for num_th, count in addresses_count.items():  # Пропускаем num_th, которых нет в row_ranges
-        if num_th not in row_ranges:
-            continue
-
+        # if num_th not in row_ranges:
+        #     prev_num_th = '0000-' + '0' * (len(str(int(num_th.split('-')[1])))) + str(int(num_th.split('-')[1])-1)
+        #     row_ranges[num_th] = {'start_num_th': row_ranges[prev_num_th]['start_addresses'] + row_ranges[prev_num_th]['count'] ,
+        #                           'start_addresses': row_ranges[prev_num_th]['start_addresses'] + row_ranges[prev_num_th]['count'] + 1,
+        #                           'end': row_ranges[prev_num_th]['start_addresses'] + row_ranges[prev_num_th]['count'] + 2,
+        #                           'count': 1}
+        main_offset = offset
         # Получаем текущий диапазон строк для num_th
         start_num_th, start_addresses, end, current_count = row_ranges[num_th]['start_num_th'], row_ranges[num_th]['start_addresses'], row_ranges[num_th]['end'], row_ranges[num_th]['count']
         # Вычисляем, сколько строк нужно добавить или удалить
+        start_addresses += offset
+        start_num_th += offset
+        end += offset
         row_difference = count - current_count
 
         if row_difference > 0:
             # Добавляем строки, если разница положительная
-            sheet.insert_rows(end + offset + 1, amount=row_difference)
+            sheet.insert_rows(end + 1, amount=row_difference)
             # Обновляем смещение
             offset += row_difference
         elif row_difference < 0:
             # Удаляем строки, если разница отрицательная
-            for _ in range(abs(row_difference)):
-                sheet.delete_rows(end + offset)
+            for i in range(abs(row_difference)):
+                sheet.delete_rows(end - i)
                 # При удалении строк смещение уменьшается
-                offset -= 1
+            offset += row_difference
 
         # Обновляем row_ranges с учетом добавленных или удаленных строк
-        row_ranges[num_th] = {'start_num_th': start_num_th, 'start_addresses': start_addresses, 'end': end + offset, 'count': count}
+        row_ranges[num_th] = {'start_num_th': start_num_th, 'start_addresses': start_addresses, 'end': end + row_difference, 'count': count}
+
     wb.save('qwerty.xlsx')
     logging.info("Данные успешно записаны в Excel")
+    print(row_ranges)
 
 
 # def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
@@ -2114,7 +2124,9 @@ async def show_main_report(call: CallbackQuery):
     print(addresses_count)
     excel_count, finish_row = ranges_addresses_excel()
     adjust_rows_for_addresses(addresses_count, excel_count, finish_row)
+    excel_count, finish_row = ranges_addresses_excel()
     actually_num_th(addresses_count, excel_count)
+
     main_json_to_excel()
     time.sleep(2)
     found_number = ranges_addresses_excel_finish()
