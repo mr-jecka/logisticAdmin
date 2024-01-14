@@ -9,6 +9,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import timedelta
 import requests
+from sqlalchemy import cast, String
+from sqlalchemy import update
 
 
 Base = declarative_base()
@@ -1062,9 +1064,11 @@ def calculate_weights_and_get_driver_last_names():
         today = datetime.now().date()
         details_by_code_tt = []
 
-        addresses_tomorrow = session.query(AddressTable).filter(AddressTable.date_th == today).all()
+        #addresses = session.query(AddressTable).filter(AddressTable.date_th == today).all()
+        addresses = session.query(AddressTable).filter(
+            AddressTable.date_th == today, (AddressTable.last_name == None) | (AddressTable.last_name == '')).all()
 
-        for address in addresses_tomorrow:
+        for address in addresses:
             address_weight = float(address.weight.real)
             total_weight_tomorrow += address_weight
 
@@ -1334,167 +1338,44 @@ from sqlalchemy import desc
 #             f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} /3000")
 
 
-def assign_drivers_to_addresses():
-    print("Start assign_drivers_to_addresses")
+def assign_drivers_9_addresses():
+    print("Start assign_drivers_9_addresses")
     driver_assignments = {}
     driver_weights = defaultdict(float)
     driver_locations = defaultdict(int)
 
     details_by_code_tt = calculate_weights_and_get_driver_last_names()
 
-    drivers = session.query(DriversTable).order_by(desc(DriversTable.location)).all()
-    driver_list = {driver.last_name: [driver.location, 0.0] for driver in drivers}
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '9' or (
+                                  address['location'] == '8' and int(address['priority']) < 50))]
 
-    drivers_all = {}
-    for driver in drivers:
-        if drivers_all.get(driver.location) is None:
-            drivers_all[driver.location] = {driver.last_name: {"weight": 0.0, "addreses": []}}
-        else:
-            drivers_all[driver.location][driver.last_name] = {"weight": 0.0, "addreses": []}
+    drivers = session.query(DriversTable).filter_by(location=9).order_by(desc(DriversTable.location)).all()
 
-    for details in sorted(details_by_code_tt, key=lambda x: (x['location'], x['priority']), reverse=True):
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
         code_tt = details['code_tt']
         weight = float(details['weight'])
         location = details['location']
         priority = details['priority']
 
         assigned_driver = None
-        if location == '0':
-            drivers_on_1_2 = {}
-            drivers_on_1_2.update(drivers_all[1])
-            drivers_on_1_2.update(drivers_all[2])
-            for driver_on_location in drivers_on_1_2.keys():
-                if drivers_on_1_2[driver_on_location]["weight"] + weight <= 3300.0 and drivers_on_1_2[driver_on_location]["weight"] != 0.0:
-                    assigned_driver = driver_on_location
-                    for location_find in drivers_all.keys():
-                        for driver_in_location in drivers_all[location_find].keys():
-                            if driver_in_location == driver_on_location:
-                                drivers_all[location_find][driver_in_location]["weight"] += weight
-                                drivers_all[location_find][driver_in_location]["addreses"].append(details)
-                    break
-        else:
-            if priority < 50 and int(location) != len(drivers_all.keys()):
-                drivers_on_location = drivers_all[int(location)+1]
-                has_not_empty_driver = False
-                last_name_not_empty_driver = None
-                for driver_on_location in drivers_on_location.keys():
-                    if drivers_on_location[driver_on_location]["weight"] > 0.0:
-                        has_not_empty_driver = True
-                        last_name_not_empty_driver = driver_on_location
-                        break
-                if has_not_empty_driver:
-                    if drivers_on_location[last_name_not_empty_driver]["weight"] + weight <= 3200:
-                        assigned_driver = last_name_not_empty_driver
-                        drivers_on_location[last_name_not_empty_driver]["weight"] += weight
-                        drivers_on_location[last_name_not_empty_driver]["addreses"].append(details)
-                    else:
-                        for driver_on_location in drivers_on_location.keys():
-                            if drivers_on_location[driver_on_location]["weight"] + weight <= 3300.0:
-                                assigned_driver = driver_on_location
-                                drivers_on_location[driver_on_location]["weight"] += weight
-                                drivers_on_location[driver_on_location]["addreses"].append(details)
-                                break
-                else:
-                    for driver_on_location in drivers_on_location.keys():
-                        if drivers_on_location[driver_on_location]["weight"] + weight <= 3300.0:
-                            assigned_driver = driver_on_location
-                            drivers_on_location[driver_on_location]["weight"] += weight
-                            drivers_on_location[driver_on_location]["addreses"].append(details)
-                            break
-                # for driver_on_location in drivers_on_location.keys():
-                #     if drivers_on_location[driver_on_location]["weight"] + weight <= 3300.0:
-                #         assigned_driver = driver_on_location
-                #         drivers_on_location[driver_on_location]["weight"] += weight
-                #         drivers_on_location[driver_on_location]["addreses"].append(details)
-                #         break
-            else:
-                drivers_on_location = drivers_all[int(location)]
-                has_not_empty_driver = False
-                last_name_not_empty_driver = None
-                for driver_on_location in drivers_on_location.keys():
-                    if drivers_on_location[driver_on_location]["weight"] > 0.0:
-                        has_not_empty_driver = True
-                        last_name_not_empty_driver = driver_on_location
-                        break
-                if has_not_empty_driver:
-                    if drivers_on_location[last_name_not_empty_driver]["weight"] + weight <= 3200:
-                        assigned_driver = last_name_not_empty_driver
-                        drivers_on_location[last_name_not_empty_driver]["weight"] += weight
-                        drivers_on_location[last_name_not_empty_driver]["addreses"].append(details)
-                    else:
-                        for driver_on_location in drivers_on_location.keys():
-                            if drivers_on_location[driver_on_location]["weight"] + weight <= 3300.0:
-                                assigned_driver = driver_on_location
-                                drivers_on_location[driver_on_location]["weight"] += weight
-                                drivers_on_location[driver_on_location]["addreses"].append(details)
-                                break
-                else:
-                    for driver_on_location in drivers_on_location.keys():
-                        if drivers_on_location[driver_on_location]["weight"] + weight <= 3300.0:
-                            assigned_driver = driver_on_location
-                            drivers_on_location[driver_on_location]["weight"] += weight
-                            drivers_on_location[driver_on_location]["addreses"].append(details)
-                            break
-        if not assigned_driver:
-            print(f"Водители по локации {location} загружены полностью")
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
 
-        # for driver_name, driver_location in driver_list.items():
-        #     print(f"Проверка задания {code_tt} для водителя {driver_name}")
-        #     current_weight = driver_weights[driver_name]
-        #     print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
-        #
-        #     if current_weight + weight <= 3200:
-        #         if driver_location == 10 and int(location) == 10:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 10 and int(location) == 9 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 9 and int(location) == 9:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 9 and int(location) == 8 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 8 and int(location) == 8:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 8 and int(location) == 7 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 7 and int(location) == 7:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 7 and int(location) == 6 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 6 and int(location) == 6:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 6 and int(location) == 5 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 5 and int(location) == 5:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 5 and int(location) == 4 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 4 and int(location) == 4:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 4 and int(location) == 5 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 4 and int(location) == 3 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 3 and int(location) == 3:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 3 and int(location) == 2 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 3 and int(location) == 0 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 2 and int(location) == 2:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 2 and int(location) == 1 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 2 and int(location) == 0 and priority < 50:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 1 and int(location) == 1:
-        #             assigned_driver = driver_name
-        #         elif driver_location == 1 and int(location) == 0:
-        #             assigned_driver = driver_name
-        #
-        #     if assigned_driver:
-        #         driver_weights[driver_name] += weight
-        #         driver_locations[driver_name] = location
-        #         break
+            if current_weight + weight <= 3300:
+                if driver_location == 9 and int(location) == 9:
+                    assigned_driver = driver_name
+                elif driver_location == 9 and int(location) == 8 and priority < 50:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
 
         driver_assignments[code_tt] = assigned_driver
 
@@ -1505,17 +1386,710 @@ def assign_drivers_to_addresses():
 
         current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
         print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
-    # for location_driver in drivers_all.keys():
-    #     if location_driver != 1:
-    #         for drivers_with_weight_now in drivers_all[location_driver].keys():
-    #             if drivers_all[location_driver][drivers_with_weight_now]["weight"] > 3000.0:
-    #                 continue
-    #             else:
-    #                 for drivers_with_weight_low in drivers_all[location_driver - 1].keys():
-    #                     for address in drivers_all[location_driver][drivers_with_weight_low]['addreses']:
-    #                         if address['priority'] < 50:
-    #                             drivers_all[location_driver][drivers_with_weight_now]['addreses'].append(address)
-    #                             drivers_all[location_driver][drivers_with_weight_low]['addreses'].remove(address)
+
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    today = datetime.now().date()
+
+    addresses_9_8 = session.query(AddressTable).filter(
+        AddressTable.date_th == today, cast(AddressTable.location, String).in_(['9', '8'])).all()
+
+    driver_names_to_update = []
+
+    for last_name in set(address.last_name for address in addresses_9_8):
+        addresses_for_last_name = [address for address in addresses_9_8 if address.last_name == last_name]
+        only_8_priority_50 = all(
+            address.location == '8' and int(address.priority) < 50 for address in addresses_for_last_name)
+
+        if only_8_priority_50:
+            driver_names_to_update.append(last_name)
+
+    update_statement = (update(AddressTable).where(
+        AddressTable.date_th == today,
+        AddressTable.location == '8',
+        AddressTable.last_name.in_(driver_names_to_update)
+    ).values(last_name=None))
+
+    session.execute(update_statement)
+    session.commit()
+
+    return driver_assignments
+
+
+def assign_drivers_8_addresses():
+    print("Start assign_drivers_8_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '8' or (
+                                  address['location'] == '7' and int(address['priority']) < 50))]
+
+    drivers = session.query(DriversTable).filter_by(location=8).order_by(desc(DriversTable.location)).all()
+
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 8 and int(location) == 8:
+                    assigned_driver = driver_name
+                elif driver_location == 8 and int(location) == 7 and priority < 50:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    today = datetime.now().date()
+
+    addresses_7_8 = session.query(AddressTable).filter(
+        AddressTable.date_th == today, cast(AddressTable.location, String).in_(['7', '8'])).all()
+
+    driver_names_to_update = []
+
+    for last_name in set(address.last_name for address in addresses_7_8):
+        addresses_for_last_name = [address for address in addresses_7_8 if address.last_name == last_name]
+        only_7_priority_50 = all(
+            address.location == '7' and int(address.priority) < 50 for address in addresses_for_last_name)
+
+        if only_7_priority_50:
+            driver_names_to_update.append(last_name)
+
+    update_statement = (update(AddressTable).where(
+        AddressTable.date_th == today,
+        AddressTable.location == '7',
+        AddressTable.last_name.in_(driver_names_to_update)
+    ).values(last_name=None))
+
+    session.execute(update_statement)
+    session.commit()
+
+    return driver_assignments
+
+
+def assign_drivers_7_addresses():
+    print("Start assign_drivers_7_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '7' or (
+                                  address['location'] == '6' and int(address['priority']) < 50))]
+
+    drivers = session.query(DriversTable).filter_by(location=7).order_by(desc(DriversTable.location)).all()
+
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 7 and int(location) == 7:
+                    assigned_driver = driver_name
+                elif driver_location == 7 and int(location) == 6 and priority < 50:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    today = datetime.now().date()
+
+    addresses_7_6 = session.query(AddressTable).filter(
+        AddressTable.date_th == today, cast(AddressTable.location, String).in_(['7', '6'])).all()
+
+    driver_names_to_update = []
+
+    for last_name in set(address.last_name for address in addresses_7_6):
+        addresses_for_last_name = [address for address in addresses_7_6 if address.last_name == last_name]
+        only_6_priority_50 = all(
+            address.location == '6' and int(address.priority) < 50 for address in addresses_for_last_name)
+
+        if only_6_priority_50:
+            driver_names_to_update.append(last_name)
+
+    update_statement = (update(AddressTable).where(
+        AddressTable.date_th == today,
+        AddressTable.location == '6',
+        AddressTable.last_name.in_(driver_names_to_update)
+    ).values(last_name=None))
+
+    session.execute(update_statement)
+    session.commit()
+
+    return driver_assignments
+
+
+def assign_drivers_6_addresses():
+    print("Start assign_drivers_6_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '6' or (
+                                  address['location'] == '5' and int(address['priority']) < 50))]
+
+    drivers = session.query(DriversTable).filter_by(location=6).order_by(desc(DriversTable.location)).all()
+
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 6 and int(location) == 6:
+                    assigned_driver = driver_name
+                elif driver_location == 6 and int(location) == 5 and priority < 50:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    today = datetime.now().date()
+
+    addresses_5_6 = session.query(AddressTable).filter(
+        AddressTable.date_th == today, cast(AddressTable.location, String).in_(['6', '5'])).all()
+
+    driver_names_to_update = []
+
+    for last_name in set(address.last_name for address in addresses_5_6):
+        addresses_for_last_name = [address for address in addresses_5_6 if address.last_name == last_name]
+        only_5_priority_50 = all(
+            address.location == '5' and int(address.priority) < 50 for address in addresses_for_last_name)
+
+        if only_5_priority_50:
+            driver_names_to_update.append(last_name)
+
+    update_statement = (update(AddressTable).where(
+        AddressTable.date_th == today,
+        AddressTable.location == '5',
+        AddressTable.last_name.in_(driver_names_to_update)
+    ).values(last_name=None))
+
+    session.execute(update_statement)
+    session.commit()
+
+    return driver_assignments
+
+
+def assign_drivers_5_addresses():
+    print("Start assign_drivers_5_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '5' or (
+                                  address['location'] == '4' and int(address['priority']) < 50))]
+
+    drivers = session.query(DriversTable).filter_by(location=5).order_by(desc(DriversTable.location)).all()
+
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 5 and int(location) == 5:
+                    assigned_driver = driver_name
+                elif driver_location == 5 and int(location) == 4 and priority < 50:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    today = datetime.now().date()
+
+    addresses_5_4 = session.query(AddressTable).filter(
+        AddressTable.date_th == today, cast(AddressTable.location, String).in_(['5', '4'])).all()
+
+    driver_names_to_update = []
+
+    for last_name in set(address.last_name for address in addresses_5_4):
+        addresses_for_last_name = [address for address in addresses_5_4 if address.last_name == last_name]
+        only_4_priority_50 = all(
+            address.location == '4' and int(address.priority) < 50 for address in addresses_for_last_name)
+
+        if only_4_priority_50:
+            driver_names_to_update.append(last_name)
+
+    update_statement = (update(AddressTable).where(
+        AddressTable.date_th == today,
+        AddressTable.location == '4',
+        AddressTable.last_name.in_(driver_names_to_update)
+    ).values(last_name=None))
+
+    session.execute(update_statement)
+    session.commit()
+
+    return driver_assignments
+
+
+def assign_drivers_4_addresses():
+    print("Start assign_drivers_4_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '4' or (
+                                  address['location'] == '3' and int(address['priority']) < 50))]
+
+    drivers = session.query(DriversTable).filter_by(location=4).order_by(desc(DriversTable.location)).all()
+
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 4 and int(location) == 4:
+                    assigned_driver = driver_name
+                elif driver_location == 4 and int(location) == 3 and priority < 50:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    today = datetime.now().date()
+
+    addresses_3_4 = session.query(AddressTable).filter(
+        AddressTable.date_th == today, cast(AddressTable.location, String).in_(['3', '4'])).all()
+
+    driver_names_to_update = []
+
+    for last_name in set(address.last_name for address in addresses_3_4):
+        addresses_for_last_name = [address for address in addresses_3_4 if address.last_name == last_name]
+        only_7_priority_50 = all(
+            address.location == '3' and int(address.priority) < 50 for address in addresses_for_last_name)
+
+        if only_7_priority_50:
+            driver_names_to_update.append(last_name)
+
+    update_statement = (update(AddressTable).where(
+        AddressTable.date_th == today,
+        AddressTable.location == '3',
+        AddressTable.last_name.in_(driver_names_to_update)
+    ).values(last_name=None))
+
+    session.execute(update_statement)
+    session.commit()
+
+    return driver_assignments
+
+
+def assign_drivers_3_addresses():
+    print("Start assign_drivers_3_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '3' or (
+                                  address['location'] == '2' and int(address['priority']) < 50))]
+
+    drivers = session.query(DriversTable).filter_by(location=3).order_by(desc(DriversTable.location)).all()
+
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 3 and int(location) == 3:
+                    assigned_driver = driver_name
+                elif driver_location == 3 and int(location) == 2 and priority < 50:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    today = datetime.now().date()
+
+    addresses_2_3 = session.query(AddressTable).filter(
+        AddressTable.date_th == today, cast(AddressTable.location, String).in_(['2', '3'])).all()
+
+    driver_names_to_update = []
+
+    for last_name in set(address.last_name for address in addresses_2_3):
+        addresses_for_last_name = [address for address in addresses_2_3 if address.last_name == last_name]
+        only_7_priority_50 = all(
+            address.location == '2' and int(address.priority) < 50 for address in addresses_for_last_name)
+
+        if only_7_priority_50:
+            driver_names_to_update.append(last_name)
+
+    update_statement = (update(AddressTable).where(
+        AddressTable.date_th == today,
+        AddressTable.location == '2',
+        AddressTable.last_name.in_(driver_names_to_update)
+    ).values(last_name=None))
+
+    session.execute(update_statement)
+    session.commit()
+
+    return driver_assignments
+
+
+def assign_drivers_2_addresses():
+    print("Start assign_drivers_2_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '2' or (
+                                  address['location'] == '1' and int(address['priority']) < 50))]
+
+    drivers = session.query(DriversTable).filter_by(location=2).order_by(desc(DriversTable.location)).all()
+
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 2 and int(location) == 2:
+                    assigned_driver = driver_name
+                elif driver_location == 2 and int(location) == 1 and priority < 50:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    today = datetime.now().date()
+
+    addresses_2_1 = session.query(AddressTable).filter(
+        AddressTable.date_th == today, cast(AddressTable.location, String).in_(['2', '1'])).all()
+
+    driver_names_to_update = []
+
+    for last_name in set(address.last_name for address in addresses_2_1):
+        addresses_for_last_name = [address for address in addresses_2_1 if address.last_name == last_name]
+        only_7_priority_50 = all(
+            address.location == '2' and int(address.priority) < 50 for address in addresses_for_last_name)
+
+        if only_7_priority_50:
+            driver_names_to_update.append(last_name)
+
+    update_statement = (update(AddressTable).where(
+        AddressTable.date_th == today,
+        AddressTable.location == '2',
+        AddressTable.last_name.in_(driver_names_to_update)
+    ).values(last_name=None))
+
+    session.execute(update_statement)
+    session.commit()
+
+    return driver_assignments
+
+
+def assign_drivers_1_addresses():
+    print("Start assign_drivers_1_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    filtered_addresses = [address for address in details_by_code_tt if
+                          (address['location'] == '1' or address['location'] == '0')]
+
+    drivers = session.query(DriversTable).filter_by(location=1).order_by(desc(DriversTable.location)).all()
+
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(filtered_addresses, key=lambda x: (x['location'], x['priority']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 1 and int(location) == 1:
+                    assigned_driver = driver_name
+                elif driver_location == 1 and int(location) == 0:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
+
+    return driver_assignments
+
+
+def assign_drivers_to_addresses():
+    print("Start assign_drivers_to_addresses")
+    driver_assignments = {}
+    driver_weights = defaultdict(float)
+    driver_locations = defaultdict(int)
+
+    details_by_code_tt = calculate_weights_and_get_driver_last_names()
+
+    drivers = session.query(DriversTable).order_by(desc(DriversTable.location)).all()
+    driver_list = {driver.last_name: driver.location for driver in drivers}
+
+    for details in sorted(details_by_code_tt, key=lambda x: (x['location'], x['weight']), reverse=True):
+        code_tt = details['code_tt']
+        weight = float(details['weight'])
+        location = details['location']
+        priority = details['priority']
+
+        assigned_driver = None
+        for driver_name, driver_location in driver_list.items():
+            print(f"Проверка задания {code_tt} для водителя {driver_name}")
+            current_weight = driver_weights[driver_name]
+            print(f"Текущее местоположение {driver_location} и местоположение {location}. Текущий вес {current_weight}, новый вес {weight}, общий вес {current_weight + weight}")
+
+            if current_weight + weight <= 3300:
+                if driver_location == 10 and int(location) == 10:
+                    assigned_driver = driver_name
+                elif driver_location == 10 and int(location) == 9 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 9 and int(location) == 9:
+                    assigned_driver = driver_name
+                elif driver_location == 9 and int(location) == 8 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 8 and int(location) == 8:
+                    assigned_driver = driver_name
+                elif driver_location == 8 and int(location) == 7 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 7 and int(location) == 7:
+                    assigned_driver = driver_name
+                elif driver_location == 7 and int(location) == 6 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 6 and int(location) == 6:
+                    assigned_driver = driver_name
+                elif driver_location == 6 and int(location) == 5 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 5 and int(location) == 5:
+                    assigned_driver = driver_name
+                elif driver_location == 5 and int(location) == 4 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 4 and int(location) == 4:
+                    assigned_driver = driver_name
+                elif driver_location == 4 and int(location) == 5 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 4 and int(location) == 3 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 3 and int(location) == 3:
+                    assigned_driver = driver_name
+                elif driver_location == 3 and int(location) == 2 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 3 and int(location) == 0 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 2 and int(location) == 2:
+                    assigned_driver = driver_name
+                elif driver_location == 2 and int(location) == 1 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 2 and int(location) == 0 and priority < 50:
+                    assigned_driver = driver_name
+                elif driver_location == 1 and int(location) == 1:
+                    assigned_driver = driver_name
+                elif driver_location == 1 and int(location) == 0:
+                    assigned_driver = driver_name
+
+            if assigned_driver:
+                driver_weights[driver_name] += weight
+                driver_locations[driver_name] = location
+                break
+
+        driver_assignments[code_tt] = assigned_driver
+
+        address_record = session.query(AddressTable).filter_by(code_tt=code_tt).first()
+        if address_record:
+            address_record.last_name = assigned_driver if assigned_driver != 'Нет доступных водителей' else None
+            session.commit()
+
+        current_load = driver_weights[assigned_driver] if assigned_driver != 'Нет доступных водителей' else 0
+        print(f"Code_tt: {code_tt}, Вес: {weight}, Местоположение: {location}, Приоритет: {priority}, {assigned_driver}, {current_load} / 3000")
 
     return driver_assignments
 

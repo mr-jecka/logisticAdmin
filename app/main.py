@@ -9,7 +9,9 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from database import get_drivers_for_route, get_routes, insert_driver_for_route, get_optimal_json, \
     get_main_json, get_info_for_report, insert_user_id_for_addresses, get_main_json_14, \
-    display_assigned_driver_details, assign_drivers_to_addresses, num_th_to_drivers, update_index_numbers
+    display_assigned_driver_details, assign_drivers_8_addresses, num_th_to_drivers, update_index_numbers,\
+    assign_drivers_9_addresses, assign_drivers_6_addresses, assign_drivers_5_addresses, assign_drivers_4_addresses,\
+    assign_drivers_3_addresses, assign_drivers_2_addresses, assign_drivers_1_addresses, assign_drivers_7_addresses
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
 import logging
@@ -95,9 +97,26 @@ async def start_distribute_route(query: types.CallbackQuery):
 
 @dp.callback_query_handler(text="overWeight")
 async def start_distribute_route(query: types.CallbackQuery):
-    assign_drivers_to_addresses()
+    assign_drivers_9_addresses()
+    time.sleep(2)
+    assign_drivers_8_addresses()
+    time.sleep(2)
+    assign_drivers_7_addresses()
+    time.sleep(2)
+    assign_drivers_6_addresses()
+    time.sleep(2)
+    assign_drivers_5_addresses()
+    time.sleep(2)
+    assign_drivers_4_addresses()
+    time.sleep(2)
+    assign_drivers_3_addresses()
+    time.sleep(2)
+    assign_drivers_2_addresses()
+    time.sleep(2)
+    assign_drivers_1_addresses()
     time.sleep(2)
     display_assigned_driver_details()
+
     #reassign_tasks_to_drivers_with_capacity()
     return
 
