@@ -756,7 +756,7 @@ def insert_excel_to_db(excel_file_path, db_params):
             if row[2] is not None:
                 logging.info(f"Processing row: {row}")
                 if len(th.keys()) != 0:
-                    if th.get("total_weight", 0) >= 250:  # Проверяем вес предыдущего num_th
+                    if th.get("total_weight", 0) >= 1000:  # Проверяем вес предыдущего num_th
                         ths.append(th)
                 th = {}
                 th["num_th"] = row[2]
@@ -782,7 +782,7 @@ def insert_excel_to_db(excel_file_path, db_params):
                 addr["count_boxes"] = int(row[9])
                 addr["weight"] = float(row[10])
                 th["addresses"].append(addr)
-        if th.get("total_weight", 0) >= 250:
+        if th.get("total_weight", 0) >= 1000:
             ths.append(th)
 
         with conn:
@@ -794,6 +794,8 @@ def insert_excel_to_db(excel_file_path, db_params):
                         RETURNING id;
                     """, (th["num_th"], th["date_th"], th["total_count_boxes"], th["total_weight"]))
                     th_id = cursor.fetchone()[0]
+                    logging.info(
+                        f"Recorded in reestr_table: num_th={th['num_th']}")  # Логирование записи в reestr_table
 
                     for addr in th["addresses"]:
                         cursor.execute("""
@@ -805,12 +807,14 @@ def insert_excel_to_db(excel_file_path, db_params):
 
                             cursor.execute("""
                                 INSERT INTO address_table (
-                                date_th, num_route, num_shop, code_tt, address_delivery,
+                                num_th, date_th, num_route, num_shop, code_tt, address_delivery,
                                  count_boxes, weight, th_id, latitude, longitude, location, priority)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                            """, (addr["date_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                            """, (addr["num_th"], addr["date_th"], addr["num_route"], addr["num_shop"], addr["code_tt"],
                                   addr["address_delivery"], addr["count_boxes"], addr["weight"],
                                   th_id, addr["latitude"], addr["longitude"], addr["location"], addr["priority"]))
+                            logging.info(
+                                f"Recorded in address_table: num_th={addr['num_th']}")  # Логирование записи в address_table
 
                             new_uuid_in_reestr = generate_and_assign_uuid(cursor, 'reestr_table', 'id')
                             new_uuid_in_address = generate_and_assign_uuid(cursor, 'address_table', 'id')
@@ -1092,6 +1096,22 @@ def calculate_weights_and_get_driver_last_names():
         logger.error(f"Error in calculate_weights_and_get_driver_last_names: {e}")
         return None
 
+
+def calculate_weights_by_num_th():
+    try:
+        # Запрос на группировку и подсчет веса
+        query = session.query(
+            AddressTable.num_th,
+            func.sum(AddressTable.weight).label('total_weight')
+        ).group_by(AddressTable.num_th)
+
+        # Выполнение запроса и получение результатов
+        results = query.all()
+        for num_th, total_weight in results:
+            print(f"Total weight for {num_th}: {total_weight} kg")
+
+    except Exception as e:
+        print(f"Error: {e}")
 
 # def can_assign_driver(current_location, current_weight, location, priority, weight):
 #     weight_limit = 3000

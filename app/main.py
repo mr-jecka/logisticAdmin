@@ -8,7 +8,7 @@ import markup as nav
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from database import get_drivers_for_route, get_routes, insert_driver_for_route, get_optimal_json, \
-    get_main_json, get_info_for_report, insert_user_id_for_addresses, get_main_json_14, \
+    get_main_json, get_info_for_report, insert_user_id_for_addresses, get_main_json_14, calculate_weights_by_num_th,\
     display_assigned_driver_details, assign_drivers_to_addresses, num_th_to_drivers, update_index_numbers
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
@@ -98,6 +98,16 @@ async def start_distribute_route(query: types.CallbackQuery):
     assign_drivers_to_addresses()
     time.sleep(2)
     display_assigned_driver_details()
+    #reassign_tasks_to_drivers_with_capacity()
+    return
+
+
+@dp.callback_query_handler(text="overWeight_2")
+async def start_distribute_route(query: types.CallbackQuery):
+    calculate_weights_by_num_th()
+    #assign_drivers_to_addresses()
+    time.sleep(2)
+    #display_assigned_driver_details()
     #reassign_tasks_to_drivers_with_capacity()
     return
 
