@@ -15,6 +15,7 @@ Base = declarative_base()
 
 
 logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 user = os.getenv('POSTGRES_USER', 'bank_user')
@@ -59,13 +60,15 @@ class ReestrTable(Base):
     total_weight = Column(Numeric(10, 2))
     lastname = Column(String(255))
     notification = Column(Boolean)
-    id = Column(UUID, primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     num_car = Column(String(255))
     shipment_time = Column(Time)
     arrival_time = Column(Time)
     departure_time = Column(Time)
     arrival_time_fact = Column(Time)
     user_id = Column(Integer)
+    location = Column(String(255))
+    sum_points = Column(Integer)
 
 
 class AddressTable(Base):
@@ -1097,21 +1100,3322 @@ def calculate_weights_and_get_driver_last_names():
         return None
 
 
-def calculate_weights_by_num_th():
+def actually_weight_reestr_table(total_weights_by_num_th):
     try:
-        # Запрос на группировку и подсчет веса
-        query = session.query(
-            AddressTable.num_th,
-            func.sum(AddressTable.weight).label('total_weight')
-        ).group_by(AddressTable.num_th)
+        weights_dict = {num_th: data['total_weight'] for num_th, data in total_weights_by_num_th}
 
-        # Выполнение запроса и получение результатов
-        results = query.all()
-        for num_th, total_weight in results:
-            print(f"Total weight for {num_th}: {total_weight} kg")
+        query = session.query(ReestrTable).filter(ReestrTable.num_th.in_(weights_dict.keys()))
+
+        for record in query:
+            record.total_weight = weights_dict[record.num_th]
+        session.commit()
+        return "Weights updated successfully"
 
     except Exception as e:
         print(f"Error: {e}")
+        session.rollback()
+        return None
+
+
+def actually_details_num_th():
+    try:
+        query = session.query(
+            ReestrTable.num_th,
+            ReestrTable.total_weight,
+        )
+
+        results = query.all()
+
+        #actually_details_num_th = {}
+
+        for num_th, total_weight in results:
+            actually_details_num_th[num_th] = total_weight
+
+        return actually_details_num_th
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
+
+def calculate_details_by_num_th():
+    try:
+        existing_none_row = session.query(ReestrTable).filter(ReestrTable.num_th == None).first()
+
+        query = session.query(
+            AddressTable.num_th,
+            AddressTable.location,
+            AddressTable.priority,
+            AddressTable.weight,
+            AddressTable.count_boxes,
+            AddressTable.code_tt)
+
+        results = query.all()
+
+        details_by_num_th = {}
+        total_weights_by_num_th = {}
+
+        for num_th, location, priority, weight, count_boxes, code_tt in results:
+            if num_th not in details_by_num_th:
+                details_by_num_th[num_th] = []
+
+            details_by_num_th[num_th].append({
+                'location': location,
+                'priority': priority,
+                'weight': weight,
+                'count_boxes': count_boxes,
+                'code_tt': code_tt
+            })
+
+            if num_th not in total_weights_by_num_th:
+                total_weights_by_num_th[num_th] = {
+                    'total_weight': 0, 'total_count_boxes': 0, 'locations': set(), 'sum_points': 0}
+            total_weights_by_num_th[num_th]['total_weight'] += weight
+            total_weights_by_num_th[num_th]['total_count_boxes'] += count_boxes
+            total_weights_by_num_th[num_th]['locations'].add(location)
+
+        for num_th, details in details_by_num_th.items():
+            num_code_tt = len(set(entry['code_tt'] for entry in details if entry['code_tt'] is not None))
+            total_weights_by_num_th[num_th]['sum_points'] = num_code_tt
+
+        sorted_total_weights = sorted(
+            total_weights_by_num_th.items(), key=lambda item: item[1]['total_weight'], reverse=True)
+
+        for num_th, data in sorted_total_weights:
+            total_weight = data['total_weight']
+            total_count_boxes = data['total_count_boxes']
+            locations = ', '.join(str(location) for location in data['locations'])
+            sum_points = data['sum_points']
+
+            logging.debug(
+                f"num_th: {num_th}, total_weight: {total_weight}, locations: {locations}, sum_points: {sum_points}")
+
+            if num_th is None and existing_none_row:
+                existing_none_row.total_weight = total_weight
+                existing_none_row.total_count_boxes = total_count_boxes
+                existing_none_row.location = locations
+                existing_none_row.sum_points = sum_points
+
+            else:
+                existing_row = session.query(ReestrTable).filter(ReestrTable.num_th == num_th).first()
+                if existing_row:
+                    existing_row.total_weight = total_weight
+                    existing_row.total_count_boxes = total_count_boxes
+                    existing_row.location = locations
+                    existing_row.sum_points = sum_points
+                else:
+                    session.add(ReestrTable(num_th=num_th, total_weight=total_weight, sum_points=sum_points,
+                                            total_count_boxes=total_count_boxes, location=locations))
+        session.commit()
+        print("ReestrTable updated successfully")
+        return sorted_total_weights, details_by_num_th
+
+    except Exception as e:
+        print("An error occurred:", str(e))
+
+
+def get_highest_num_th():
+    highest_num_th = session.query(ReestrTable).order_by(ReestrTable.num_th.desc()).first()
+    if not highest_num_th.num_th:
+        highest_num_th = session.query(ReestrTable).order_by(ReestrTable.num_th.desc()).offset(1).limit(1).first()
+    print(highest_num_th.num_th)
+    return highest_num_th
+
+
+def get_minimal_num_th():
+    # Найти минимальный num_th в таблице ReestrTable
+    minimal_num_th = session.query(ReestrTable).order_by(ReestrTable.num_th.asc()).first()
+    return minimal_num_th
+
+
+def increment_num_th(num_th):
+    num_parts = num_th.split('-')
+    num = int(num_parts[1])
+    incremented_num = num + 1
+    return f'{num_parts[0]}-{incremented_num:06d}'
+
+
+def add_num_th_6(result, total_weights_by_num_th, details_by_num_th):
+    try:
+        if result:
+            overweight_in_location_6 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '6' in data['locations'] and data['total_weight'] > 3100]
+            overweight_code_tt = []
+            if overweight_in_location_6:
+                for num_th in overweight_in_location_6:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '6':
+                                if total_weight > 3100:
+                                    total_weight -= item['weight']
+                                    overweight_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            highest_num_th = get_highest_num_th()
+            new_id = str(uuid.uuid4())
+            if highest_num_th:
+                new_num_th = increment_num_th(highest_num_th.num_th)
+                date_th = highest_num_th.date_th
+            new_record = ReestrTable(num_th=new_num_th, total_weight=Decimal('0.0'), date_th=date_th, id=new_id)
+            session.add(new_record)
+            session.commit()
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overweight_code_tt)).update({'num_th': new_num_th}, synchronize_session='fetch')
+            session.commit()
+
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == new_num_th).group_by(AddressTable.num_th).first()
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {new_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                session.query(ReestrTable).filter(ReestrTable.num_th == new_num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                session.commit()
+
+            for num_th in overweight_in_location_6:
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def add_num_th_5(result, total_weights_by_num_th, details_by_num_th):
+    try:
+        if result:
+            overweight_in_location_5 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '5' in data['locations'] and data['total_weight'] > 3100]
+            overweight_code_tt = []
+            if overweight_in_location_5:
+                for num_th in overweight_in_location_5:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '4':
+                                if total_weight > 3100:
+                                    total_weight -= item['weight']
+                                    overweight_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            highest_num_th = get_highest_num_th()
+            new_id = str(uuid.uuid4())
+            if highest_num_th:
+                new_num_th = increment_num_th(highest_num_th.num_th)
+                date_th = highest_num_th.date_th
+            new_record = ReestrTable(num_th=new_num_th, total_weight=Decimal('0.0'), date_th=date_th, id=new_id)
+            session.add(new_record)
+            session.commit()
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overweight_code_tt)).update({'num_th': new_num_th}, synchronize_session='fetch')
+            session.commit()
+
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == new_num_th).group_by(AddressTable.num_th).first()
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {new_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                session.query(ReestrTable).filter(ReestrTable.num_th == new_num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                session.commit()
+
+            for num_th in overweight_in_location_5:
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def check_2_on_12(total_weights_by_num_th, details_by_num_th):
+    try:
+        location_2_data = [(
+            num_th, data['total_weight']) for num_th, data in total_weights_by_num_th if '2' in data['locations']]
+        min_num_th = min(location_2_data, key=lambda x: x[1])[0]
+        max_num_th = max(location_2_data, key=lambda x: x[1])[0]
+
+        print(min_num_th)
+        print(max_num_th)
+
+        code_tt_count_by_num_th = {}
+
+        for num_th, _ in location_2_data:
+            code_tt_count_by_num_th[num_th] = 0
+
+        for num_th, details in details_by_num_th.items():
+            if num_th in code_tt_count_by_num_th:
+                code_tt_count_by_num_th[num_th] += len(details)
+
+        for num_th, count in code_tt_count_by_num_th.items():
+            print(f"num_th: {num_th}, code_tt count: {count}")
+
+        overnumber_code_tt = []
+        if code_tt_count_by_num_th.get(max_num_th, 0) > 12:
+            sorted_items = sorted(details_by_num_th[max_num_th], key=lambda x: x['weight'])
+            for item in sorted_items:
+                if code_tt_count_by_num_th.get(max_num_th, 0) > 12:
+                    code_tt_count_by_num_th[max_num_th] -= 1
+                    overnumber_code_tt.append(item['code_tt'])
+            print(f"Removed code_tt from {max_num_th}: {overnumber_code_tt}")
+        if overnumber_code_tt:
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overnumber_code_tt)).update({'num_th': min_num_th}, synchronize_session='fetch')
+        session.commit()
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return False
+
+
+def check_12_th_2():
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        location_2_data = [(num_th, data['total_weight']) for num_th, data in total_weights_by_num_th
+                           if '2' in data['locations'] and data['total_weight'] > 1700]
+        min_num_th = min(location_2_data, key=lambda x: x[1])[0]
+        max_num_th = max(location_2_data, key=lambda x: x[1])[0]
+
+        print(min_num_th)
+        print(max_num_th)
+
+        code_tt_count_by_num_th = {}
+
+        for num_th, _ in location_2_data:
+            code_tt_count_by_num_th[num_th] = 0
+
+        for num_th, details in details_by_num_th.items():
+            if num_th in code_tt_count_by_num_th:
+                code_tt_count_by_num_th[num_th] += len(details)
+
+        for num_th, count in code_tt_count_by_num_th.items():
+            print(f"num_th: {num_th}, code_tt count: {count}")
+
+        num_th_with_max_count = max(code_tt_count_by_num_th, key=code_tt_count_by_num_th.get)
+        max_count = code_tt_count_by_num_th[num_th_with_max_count]
+
+        num_th_with_min_count = min(code_tt_count_by_num_th, key=code_tt_count_by_num_th.get)
+        min_count = code_tt_count_by_num_th[num_th_with_max_count]
+
+        print(f"num_th with max code_tt count: {num_th_with_max_count}, code_tt count: {max_count}")
+
+        overnumber_code_tt = []
+        if code_tt_count_by_num_th.get(num_th_with_max_count, 0) > 12:
+            sorted_items = sorted(details_by_num_th[num_th_with_max_count], key=lambda x: x['weight'])
+            for item in sorted_items:
+                if code_tt_count_by_num_th.get(num_th_with_max_count, 0) > 11:
+                    code_tt_count_by_num_th[num_th_with_max_count] -= 1
+                    overnumber_code_tt.append(item['code_tt'])
+            print(f"Removed code_tt from {num_th_with_max_count}: {overnumber_code_tt}")
+        if overnumber_code_tt:
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overnumber_code_tt)).update({'num_th': num_th_with_min_count}, synchronize_session='fetch')
+        session.commit()
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        overweight_code_tt = []
+        sorted_items = sorted(details_by_num_th[num_th_with_min_count], key=lambda x: x['weight'], reverse=True)
+
+        if num_th_with_min_count:
+            sorted_items = sorted(details_by_num_th[num_th_with_min_count], key=lambda x: x['weight'], reverse=True)
+            total_weight = next(
+                data['total_weight'] for num, data in total_weights_by_num_th if num == num_th_with_min_count)
+
+            for item in sorted_items:
+                if item.get('location') == '2' or '1':
+                    if total_weight > 3300:
+                        total_weight -= item['weight']
+                        overweight_code_tt.append(item['code_tt'])
+                    else:
+                        break
+
+        if overweight_code_tt:
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overnumber_code_tt)).update({'num_th': num_th_with_max_count}, synchronize_session='fetch')
+        session.commit()
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return False
+
+#     overweight_code_tt = []
+#     if overweight_in_location_2:
+#         for num_th in overweight_in_location_2:
+#             if num_th in details_by_num_th:
+#                 sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+#                 total_weight = next(
+#                     data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+#
+#                 for item in sorted_items:
+#                     if item.get('location') == '4':
+#                         if total_weight > 3100:
+#                             total_weight -= item['weight']
+#                             overweight_code_tt.append(item['code_tt'])
+#                         else:
+#                             break
+# except Exception as e:
+#     print(f"An error occurred: {str(e)}")
+
+
+def add_num_th_2(result, total_weights_by_num_th, details_by_num_th):
+    try:
+        if result:
+            overweight_in_location_2_1 = [num_th for num_th, data in total_weights_by_num_th if
+                                          ('2' in data['locations'] or '1' in data['locations']) and
+                                          data['total_weight'] > 3100]
+
+            overweight_code_tt = []
+            if overweight_in_location_2_1:
+                for num_th in overweight_in_location_2_1:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '1' or item.get('location') == '2':
+                                if total_weight > 3100:
+                                    total_weight -= item['weight']
+                                    overweight_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            highest_num_th = get_highest_num_th()
+            new_id = str(uuid.uuid4())
+            if highest_num_th:
+                new_num_th = increment_num_th(highest_num_th.num_th)
+                date_th = highest_num_th.date_th
+            new_record = ReestrTable(num_th=new_num_th, total_weight=Decimal('0.0'), date_th=date_th, id=new_id)
+            session.add(new_record)
+            session.commit()
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overweight_code_tt)).update({'num_th': new_num_th}, synchronize_session='fetch')
+            session.commit()
+
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == new_num_th).group_by(AddressTable.num_th).first()
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {new_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                session.query(ReestrTable).filter(ReestrTable.num_th == new_num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                session.commit()
+
+            for num_th in overweight_in_location_2_1:
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def insert_for_7_with_nedoves(total_weights_by_num_th, details_by_num_th):
+    print("Start insert_for_7_with_nedoves")
+    try:
+        overweight_in_location_7 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '7' in data['locations'] and data['total_weight'] > 3100]
+        only_7_with_nedoves = [num_th for num_th, details in details_by_num_th.items() if
+                               all(item['location'] == '7' for item in details) and
+                               sum(item['weight'] for item in details) < 2900]
+        print("only_7_with_nedoves:", only_7_with_nedoves[0])
+        overweight_code_tt = []
+        if overweight_in_location_7:
+            print("overweight_in_location_7:", overweight_in_location_7)
+            for num_th in overweight_in_location_7:
+                if only_7_with_nedoves[0]:
+                    sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'], reverse=True)
+                    try:
+                        total_weight = next(
+                            data[1]['total_weight'] for data in total_weights_by_num_th if data[0] == only_7_with_nedoves[0])
+                    except Exception as e:
+                        print(f"An error occurred: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                    print("Processing num_th:", num_th)
+                    print("Initial total_weight:", total_weight)
+                    for item in sorted_items:
+                        if item.get('location') == '7':
+                            if 2900 <= total_weight <= 3200:
+                                break
+                            total_weight += item['weight']
+                            if 2900 <= total_weight <= 3200:
+                                break
+                            overweight_code_tt.append(item['code_tt'])
+                            print("Added code_tt:", item['code_tt'])
+                            print("Updated total_weight:", total_weight)
+                            if 2900 <= total_weight <= 3200:
+                                break
+
+        print(f"точки для вставки: {overweight_code_tt}")
+        if overweight_code_tt and only_7_with_nedoves:
+            num_th_to_set = only_7_with_nedoves[0]
+            print("num_th_to_set:", num_th_to_set)
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(overweight_code_tt)).update(
+                {'num_th': num_th_to_set}, synchronize_session='fetch')
+            session.commit()
+        only_7_with_nedoves = only_7_with_nedoves[0]
+        total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                           func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+            .filter(AddressTable.num_th == only_7_with_nedoves).group_by(AddressTable.num_th).first()
+
+        if total_weight_query:
+            total_weight, total_count_boxes = total_weight_query
+            print(f"Total Weight for {only_7_with_nedoves}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+            session.query(ReestrTable).filter(ReestrTable.num_th == only_7_with_nedoves).update(
+                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+            session.commit()
+
+        for num_th in overweight_in_location_7:
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+            print("total_weight_query:", total_weight_query)
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                    synchronize_session='fetch')
+                session.commit()
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def add_num_th_7(result):
+    try:
+        if result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            overweight_in_location_7 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '7' in data['locations'] and data['total_weight'] > 3100]
+
+            overweight_code_tt = []
+            if overweight_in_location_7:
+                for num_th in overweight_in_location_7:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'], reverse=True)
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '6':
+                                if total_weight > 3200:
+                                    total_weight -= item['weight']
+                                    overweight_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            highest_num_th = get_highest_num_th()
+            new_id = str(uuid.uuid4())
+            if highest_num_th and highest_num_th.num_th:
+                new_num_th = increment_num_th(highest_num_th.num_th)
+                date_th = highest_num_th.date_th
+            else:
+                print(f"We have trable with {highest_num_th}")
+
+            new_record = ReestrTable(num_th=new_num_th, total_weight=Decimal('0.0'), date_th=date_th, id=new_id)
+            session.add(new_record)
+            session.commit()
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overweight_code_tt)).update({'num_th': new_num_th}, synchronize_session='fetch')
+            session.commit()
+
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == new_num_th).group_by(AddressTable.num_th).first()
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {new_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                session.query(ReestrTable).filter(ReestrTable.num_th == new_num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                session.commit()
+
+            for num_th in overweight_in_location_7:
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_8_0(result, total_weights_by_num_th, details_by_num_th):
+    print("Start correct_8_0")
+    code_tt_0 = []
+    code_tt_8_49 = []
+    code_tt_8_4 = []
+    code_tt_8_3 = []
+    code_tt_8_2 = []
+    code_tt_8_1 = []
+
+    try:
+        if result == False:
+            nedoves_in_location_8_0 = [num_th for num_th, data in total_weights_by_num_th if '8' in data['locations']
+                                       and '0' in data['locations'] and data['total_weight'] < 2900]
+
+            code_tt_0.extend(
+                [item['code_tt'] for item in details_by_num_th[nedoves_in_location_8_0[0]] if
+                 item.get('location') == '0'])
+
+            if code_tt_0 is not None:
+                print("code_tt_0:", code_tt_0)
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(code_tt_0)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+            code_tt_8_49.extend(
+                [item['code_tt'] for item in details_by_num_th[nedoves_in_location_8_0[0]] if
+                 item.get('location') == '8' and item.get('priority') == 49])
+
+            if code_tt_8_49 is not None:
+                print("code_tt_8_49:", code_tt_8_49)
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(code_tt_8_49)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+            code_tt_8_4.extend(
+                [item['code_tt'] for item in details_by_num_th[nedoves_in_location_8_0[0]] if
+                 item.get('location') == '8' and item.get('priority') == 4])
+
+            if code_tt_8_4 is not None:
+                print("code_tt_8_4:", code_tt_8_4)
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(code_tt_8_4)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+            code_tt_8_3.extend(
+                [item['code_tt'] for item in details_by_num_th[nedoves_in_location_8_0[0]] if
+                 item.get('location') == '8' and item.get('priority') == 3])
+
+            if code_tt_8_3 is not None:
+                print("code_tt_8_3:", code_tt_8_3)
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(code_tt_8_3)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+            code_tt_8_2.extend(
+                [item['code_tt'] for item in details_by_num_th[nedoves_in_location_8_0[0]] if
+                 item.get('location') == '8' and item.get('priority') == 2])
+
+            if code_tt_8_2 is not None:
+                print("code_tt_8_2:", code_tt_8_2)
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(code_tt_8_2)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+            code_tt_8_1.extend(
+                [item['code_tt'] for item in details_by_num_th[nedoves_in_location_8_0[0]] if
+                 item.get('location') == '8' and item.get('priority') == 1])
+
+            if code_tt_8_1 is not None:
+                print("code_tt_8_1:", code_tt_8_1)
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(code_tt_8_1)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+            if nedoves_in_location_8_0:
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th.in_(nedoves_in_location_8_0)).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(
+                        f"Total Weight for {nedoves_in_location_8_0}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                    session.query(ReestrTable).filter(ReestrTable.num_th.in_(nedoves_in_location_8_0)).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+                    session.commit()
+                else:
+                    for num_th in nedoves_in_location_8_0:
+                        session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                            {'total_weight': 0, 'total_count_boxes': 0}, synchronize_session='fetch')
+                    session.commit()
+                    print(f"у {nedoves_in_location_8_0} выставляем 0 в ReestreTable")
+
+        #return code_tt_8_49, code_tt_8_4, code_tt_8_3, code_tt_8_2, code_tt_8_1
+        print("End correct_8_0")
+
+    except Exception as e:
+        print("Error in correct_8:", e)
+
+
+def correct_8_1(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_8_1")
+    max_num_th_8 = None
+    max_num_th_9 = None
+    try:
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            max_num_th_8 = max(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_8_1 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '8' and item.get('priority') == 1]
+        code_tt_8_1 = [item['code_tt'] for item in filtered_8_1]
+        weight_code_tt_8_1 = [item['weight'] for item in filtered_8_1]
+        print(weight_code_tt_8_1)
+
+        nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '9' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_9:", nedoves_in_location_9)
+        if nedoves_in_location_9:
+            max_num_th_9 = max(
+                nedoves_in_location_9,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        if max_num_th_9:
+            max_num_th = max_num_th_9
+        else:
+            max_num_th = max_num_th_8
+
+        if max_num_th:
+            if code_tt_8_1:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_8_1)
+                if total_weight_with_new_items <= 3200:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_1)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+
+        print("End correct_8_2")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_8_2(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_8_2")
+    max_num_th_8 = None
+    max_num_th_9 = None
+    try:
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            max_num_th_8 = max(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_8_2 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '8' and item.get('priority') == 2]
+        code_tt_8_2 = [item['code_tt'] for item in filtered_8_2]
+        weight_code_tt_8_2 = [item['weight'] for item in filtered_8_2]
+        print(weight_code_tt_8_2)
+
+        nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '9' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_9:", nedoves_in_location_9)
+        if nedoves_in_location_9:
+            max_num_th_9 = max(
+                nedoves_in_location_9,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        if max_num_th_9:
+            max_num_th = max_num_th_9
+        else:
+            max_num_th = max_num_th_8
+
+        if max_num_th:
+            if code_tt_8_2:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_8_2)
+                if total_weight_with_new_items <= 3200:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_2)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+
+        print("End correct_8_2")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def moving_6_4_to_num_th_8(result):
+    print("Start moving_6_4_to_num_th_8")
+    max_num_th_8 = None
+    try:
+        if not result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                     if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+            if nedoves_in_location_8:
+                print("nedoves_in_location_8:", nedoves_in_location_8)
+                max_num_th_8 = max(nedoves_in_location_8, key=lambda num_th: next(data['total_weight'] for num,
+                data in total_weights_by_num_th if num == num_th), default=float('inf'))
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+            filtered_6_4 = [item for item in details_by_num_th.get(None, []) if item.get(
+                'location') == '6' and item.get('priority') == 4]
+            code_tt_6_4 = [item['code_tt'] for item in filtered_6_4]
+            weight_code_tt_6_4 = [item['weight'] for item in filtered_6_4]
+
+            if max_num_th_8:
+                if code_tt_6_4:
+                    print(weight_code_tt_6_4)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+                    total_weight_with_new_items = total_weight + sum(weight_code_tt_6_4)
+                    if total_weight_with_new_items <= 3300:
+                        session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_4)).update(
+                            {'num_th': max_num_th_8}, synchronize_session='fetch')
+                        session.commit()
+
+                        total_weight_query = session.query(
+                            func.sum(AddressTable.weight).label('total_weight'),
+                            func.sum(AddressTable.count_boxes).label('total_count_boxes'))\
+                            .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th_8}: {total_weight}, Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End moving_6_4_to_num_th_8")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def moving_6_49_to_num_th_8(result):
+    print("Start moving_6_49_to_num_th_8")
+    max_num_th_8 = None
+    try:
+        if not result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                     if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+            if nedoves_in_location_8:
+                print("nedoves_in_location_8:", nedoves_in_location_8)
+                max_num_th_8 = max(nedoves_in_location_8, key=lambda num_th: next(data['total_weight'] for num,
+                data in total_weights_by_num_th if num == num_th), default=float('inf'))
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+            filtered_6_49 = [item for item in details_by_num_th.get(None, []) if item.get(
+                'location') == '6' and item.get('priority') == 49]
+            code_tt_6_49 = [item['code_tt'] for item in filtered_6_49]
+            weight_code_tt_6_49 = [item['weight'] for item in filtered_6_49]
+
+            if max_num_th_8:
+                if code_tt_6_49:
+                    print(weight_code_tt_6_49)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+                    total_weight_with_new_items = total_weight + sum(weight_code_tt_6_49)
+                    if total_weight_with_new_items <= 3300:
+                        session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_49)).update(
+                            {'num_th': max_num_th_8}, synchronize_session='fetch')
+                        session.commit()
+
+                        total_weight_query = session.query(
+                            func.sum(AddressTable.weight).label('total_weight'),
+                            func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                            .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th_8}: {total_weight}, Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End correct_6_49")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+
+def moving_6_3_to_num_th_8(result):
+    print("Start moving_6_3_to_num_th_8")
+    max_num_th_8 = None
+    try:
+        if not result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                     if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+            if nedoves_in_location_8:
+                print("nedoves_in_location_8:", nedoves_in_location_8)
+                max_num_th_8 = max(nedoves_in_location_8, key=lambda num_th: next(data['total_weight'] for num,
+                data in total_weights_by_num_th if num == num_th), default=float('inf'))
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+            filtered_6_3 = [item for item in details_by_num_th.get(None, []) if item.get(
+                'location') == '6' and item.get('priority') == 3]
+            code_tt_6_3 = [item['code_tt'] for item in filtered_6_3]
+            weight_code_tt_6_3 = [item['weight'] for item in filtered_6_3]
+
+            if max_num_th_8:
+                if code_tt_6_3:
+                    print(weight_code_tt_6_3)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+                    total_weight_with_new_items = total_weight + sum(weight_code_tt_6_3)
+                    if total_weight_with_new_items <= 3300:
+                        session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_3)).update(
+                            {'num_th': max_num_th_8}, synchronize_session='fetch')
+                        session.commit()
+
+                        total_weight_query = session.query(
+                            func.sum(AddressTable.weight).label('total_weight'),
+                            func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                            .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th_8}: {total_weight}, Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End correct_6_3")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def moving_6_2_to_num_th_8(result):
+    print("Start moving_6_2_to_num_th_8")
+    max_num_th_8 = None
+    try:
+        if not result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                     if '8' in data['locations'] and data['total_weight'] < 3000 and num_th is not None]
+
+            if nedoves_in_location_8:
+                print("nedoves_in_location_8:", nedoves_in_location_8)
+                max_num_th_8 = max(nedoves_in_location_8, key=lambda num_th: next(data['total_weight'] for num,
+                data in total_weights_by_num_th if num == num_th), default=float('inf'))
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+            filtered_6_2 = [item for item in details_by_num_th.get(None, []) if item.get(
+                'location') == '6' and item.get('priority') == 2]
+            code_tt_6_2 = [item['code_tt'] for item in filtered_6_2]
+            weight_code_tt_6_2 = [item['weight'] for item in filtered_6_2]
+
+            if max_num_th_8:
+                if code_tt_6_2:
+                    print(weight_code_tt_6_2)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+                    total_weight_with_new_items = total_weight + sum(weight_code_tt_6_2)
+                    if total_weight_with_new_items <= 3300:
+                        session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_2)).update(
+                            {'num_th': max_num_th_8}, synchronize_session='fetch')
+                        session.commit()
+
+                        total_weight_query = session.query(
+                            func.sum(AddressTable.weight).label('total_weight'),
+                            func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                            .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th_8}: {total_weight}, Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End correct_6_2")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def moving_6_1_to_num_th_8(result):
+    print("Start moving_6_1_to_num_th_8")
+    max_num_th_8 = None
+    try:
+        if not result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                     if '8' in data['locations'] and data['total_weight'] < 3000 and num_th is not None]
+
+            if nedoves_in_location_8:
+                print("nedoves_in_location_8:", nedoves_in_location_8)
+                max_num_th_8 = max(nedoves_in_location_8, key=lambda num_th: next(data['total_weight'] for num,
+                data in total_weights_by_num_th if num == num_th), default=float('inf'))
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+            filtered_6_1 = [item for item in details_by_num_th.get(None, []) if item.get(
+                'location') == '6' and item.get('priority') == 1]
+            code_tt_6_1 = [item['code_tt'] for item in filtered_6_1]
+            weight_code_tt_6_1 = [item['weight'] for item in filtered_6_1]
+
+            if max_num_th_8:
+                if code_tt_6_1:
+                    print(weight_code_tt_6_1)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+                    total_weight_with_new_items = total_weight + sum(weight_code_tt_6_1)
+                    if total_weight_with_new_items <= 3300:
+                        session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_1)).update(
+                            {'num_th': max_num_th_8}, synchronize_session='fetch')
+                        session.commit()
+
+                        total_weight_query = session.query(
+                            func.sum(AddressTable.weight).label('total_weight'),
+                            func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                            .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th_8}: {total_weight}, Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End correct_6_1")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def moving_6_44_to_num_th_8(result):
+    print("Start moving_6_44_to_num_th_8")
+    max_num_th_8 = None
+    try:
+        if not result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                     if '8' in data['locations'] and data['total_weight'] < 3300 and num_th is not None]
+
+            if nedoves_in_location_8:
+                print("nedoves_in_location_8:", nedoves_in_location_8)
+                max_num_th_8 = max(nedoves_in_location_8, key=lambda num_th: next(data['total_weight'] for num,
+                data in total_weights_by_num_th if num == num_th), default=float('inf'))
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+            filtered_6_44 = [item for item in details_by_num_th.get(None, []) if item.get(
+                'location') == '6' and item.get('priority') == 44]
+            code_tt_6_44 = [item['code_tt'] for item in filtered_6_44]
+            weight_code_tt_6_44 = [item['weight'] for item in filtered_6_44]
+
+            if max_num_th_8:
+                if code_tt_6_44:
+                    print(weight_code_tt_6_44)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+                    total_weight_with_new_items = total_weight + sum(weight_code_tt_6_44)
+                    if total_weight_with_new_items <= 3300:
+                        session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_44)).update(
+                            {'num_th': max_num_th_8}, synchronize_session='fetch')
+                        session.commit()
+
+                        total_weight_query = session.query(
+                            func.sum(AddressTable.weight).label('total_weight'),
+                            func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                            .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th_8}: {total_weight}, Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End correct_6_44")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def moving_6_6_to_num_th_8(result):
+    print("Start moving_6_6_to_num_th_8")
+    max_num_th_8 = None
+    try:
+        if not result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                     if '8' in data['locations'] and data['total_weight'] < 3000 and num_th is not None]
+
+            if nedoves_in_location_8:
+                print("nedoves_in_location_8:", nedoves_in_location_8)
+                max_num_th_8 = max(nedoves_in_location_8, key=lambda num_th: next(data['total_weight'] for num,
+                data in total_weights_by_num_th if num == num_th), default=float('inf'))
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+            filtered_6_6 = [item for item in details_by_num_th.get(None, []) if item.get(
+                'location') == '6' and item.get('priority') == 6]
+            code_tt_6_6 = [item['code_tt'] for item in filtered_6_6]
+            weight_code_tt_6_6 = [item['weight'] for item in filtered_6_6]
+
+            if max_num_th_8:
+                if code_tt_6_6:
+                    print(weight_code_tt_6_6)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+                    total_weight_with_new_items = total_weight + sum(weight_code_tt_6_6)
+                    if total_weight_with_new_items <= 3200:
+                        session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_6)).update(
+                            {'num_th': max_num_th_8}, synchronize_session='fetch')
+                        session.commit()
+
+                        total_weight_query = session.query(
+                            func.sum(AddressTable.weight).label('total_weight'),
+                            func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                            .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th_8}: {total_weight}, Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End correct_6_6")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def moving_6_45_to_num_th_8(result):
+    print("Start moving_6_45_to_num_th_8")
+    max_num_th_8 = None
+    try:
+        if not result:
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                     if '8' in data['locations'] and data['total_weight'] < 3000 and num_th is not None]
+
+            if nedoves_in_location_8:
+                print("nedoves_in_location_8:", nedoves_in_location_8)
+                max_num_th_8 = max(nedoves_in_location_8, key=lambda num_th: next(data['total_weight'] for num,
+                data in total_weights_by_num_th if num == num_th), default=float('inf'))
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+            filtered_6_45 = [item for item in details_by_num_th.get(None, []) if item.get(
+                'location') == '6' and item.get('priority') == 45]
+            code_tt_6_45 = [item['code_tt'] for item in filtered_6_45]
+            weight_code_tt_6_45 = [item['weight'] for item in filtered_6_45]
+
+            if max_num_th_8:
+                if code_tt_6_45:
+                    print(weight_code_tt_6_45)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+                    total_weight_with_new_items = total_weight + sum(weight_code_tt_6_45)
+                    if total_weight_with_new_items <= 3200:
+                        session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_45)).update(
+                            {'num_th': max_num_th_8}, synchronize_session='fetch')
+                        session.commit()
+
+                        total_weight_query = session.query(
+                            func.sum(AddressTable.weight).label('total_weight'),
+                            func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                            .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th_8}: {total_weight}, Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End correct_6_45")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_0_3_old(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_0_3")
+    max_num_th_8 = None
+    max_num_th_9 = None
+    try:
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            max_num_th_8 = max(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_0_3 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '0' and item.get('priority') == 3]
+        code_tt_0_3 = [item['code_tt'] for item in filtered_0_3]
+        weight_code_tt_0_3 = [item['weight'] for item in filtered_0_3]
+        print(weight_code_tt_0_3)
+
+        nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '9' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_9:", nedoves_in_location_9)
+        if nedoves_in_location_9:
+            max_num_th_9 = max(
+                nedoves_in_location_9,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        if max_num_th_9:
+            max_num_th = max_num_th_9
+        else:
+            max_num_th = max_num_th_8
+
+        if max_num_th:
+            if code_tt_0_3:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_0_3)
+                if total_weight_with_new_items <= 3050:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_0_3)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+
+        print("End correct_0_3")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_0_2(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_0_2")
+    min_num_th_2 = None
+    try:
+        nedoves_in_location_2 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '2' in data['locations'] and data['total_weight'] < 2700 and num_th is not None]
+
+        print("nedoves_in_location_2:", nedoves_in_location_2)
+        if nedoves_in_location_2:
+            min_num_th_2 = min(
+                nedoves_in_location_2,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_0_2 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '0' and item.get('priority') == 2]
+        code_tt_0_2 = [item['code_tt'] for item in filtered_0_2]
+        weight_code_tt_0_2 = [item['weight'] for item in filtered_0_2]
+        print(weight_code_tt_0_2)
+
+        if min_num_th_2:
+            if code_tt_0_2:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == min_num_th_2)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_0_2)
+                if total_weight_with_new_items <= 3200:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_0_2)).update(
+                        {'num_th': min_num_th_2}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == min_num_th_2).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {min_num_th_2}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == min_num_th_2).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+
+        print("End correct_0_2")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_0_1(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_0_1")
+    max_num_th_8 = None
+    max_num_th_9 = None
+    try:
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            max_num_th_8 = max(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_0_1 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '0' and item.get('priority') == 1]
+        code_tt_0_1 = [item['code_tt'] for item in filtered_0_1]
+        weight_code_tt_0_1 = [item['weight'] for item in filtered_0_1]
+        print(weight_code_tt_0_1)
+
+        nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '9' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_9:", nedoves_in_location_9)
+        if nedoves_in_location_9:
+            max_num_th_9 = max(
+                nedoves_in_location_9,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        if max_num_th_9:
+            max_num_th = max_num_th_9
+        else:
+            max_num_th = max_num_th_8
+
+        if max_num_th:
+            if code_tt_0_1:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_0_1)
+                if total_weight_with_new_items <= 3050:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_0_1)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+
+        print("End correct_0_1")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+# def correct_8_2(total_weights_by_num_th, details_by_num_th):
+#     print("Start correct_8")
+#     max_num_th_8 = None
+#     max_num_th_9 = None
+#     try:
+#         nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+#                                  if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+#
+#         print("nedoves_in_location_8:", nedoves_in_location_8)
+#         if nedoves_in_location_8:
+#             max_num_th_8 = max(
+#                 nedoves_in_location_8,
+#                 key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+#                 default=float('inf'))
+#
+#         # Получаем code_tt, у которых num_th равен None
+#         code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+#         filtered_8_2 = [item for item in details_by_num_th.get(None, []) if item.get(
+#             'location') == '8' and item.get('priority') == 2]
+#         code_tt_8_2 = [item['code_tt'] for item in filtered_8_2]
+#         weight_code_tt_8_2 = [item['weight'] for item in filtered_8_2]
+#         print(weight_code_tt_8_2)
+#
+#         nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th
+#                                  if '9' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+#
+#         print("nedoves_in_location_9:", nedoves_in_location_8)
+#         elif:
+#          if nedoves_in_location_9:
+#             max_num_th_9 = max(
+#                 nedoves_in_location_9,
+#                 key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+#                 default=float('inf'))
+#
+#         # Получаем code_tt, у которых num_th равен None
+#         code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+#         filtered_8_2 = [item for item in details_by_num_th.get(None, []) if item.get(
+#             'location') == '8' and item.get('priority') == 2]
+#         code_tt_8_2 = [item['code_tt'] for item in filtered_8_2]
+#         weight_code_tt_8_2 = [item['weight'] for item in filtered_8_2]
+#         print(weight_code_tt_8_2)
+#         if max_num_th_9:
+#             if code_tt_8_2:
+#                 total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+#                 total_weight_with_new_items = total_weight + sum(weight_code_tt_8_2)
+#                 if total_weight_with_new_items <= 3200:
+#                     session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_2)).update(
+#                         {'num_th': max_num_th_8}, synchronize_session='fetch')
+#                     session.commit()
+#
+#                     total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+#                                                        func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+#                         .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+#
+#                     if total_weight_query:
+#                         total_weight, total_count_boxes = total_weight_query
+#                         print(f"Total Weight for {max_num_th_8}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+#                         session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+#                             {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+#                             synchronize_session='fetch')
+#                         session.commit()
+#         elif:
+#             if max_num_th_9:
+#                 if code_tt_8_2:
+#                     total_weight = next(
+#                         data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th_8)
+#                     total_weight_with_new_items = total_weight + sum(weight_code_tt_8_2)
+#                     if total_weight_with_new_items <= 3200:
+#                         session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_2)).update(
+#                             {'num_th': max_num_th_8}, synchronize_session='fetch')
+#                         session.commit()
+#
+#                         total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+#                                                            func.sum(AddressTable.count_boxes).label(
+#                                                                'total_count_boxes')) \
+#                             .filter(AddressTable.num_th == max_num_th_8).group_by(AddressTable.num_th).first()
+#
+#                         if total_weight_query:
+#                             total_weight, total_count_boxes = total_weight_query
+#                             print(
+#                                 f"Total Weight for {max_num_th_8}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+#                             session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th_8).update(
+#                                 {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+#                                 synchronize_session='fetch')
+#                             session.commit()
+#             print("End correct_8_2")
+#
+#     except Exception as e:
+#         print(f"An error occurred: {str(e)}")
+
+
+def correct_8_3(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_8")
+    max_num_th = None
+    try:
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            max_num_th = max(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_8_3 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '8' and item.get('priority') == 3]
+        code_tt_8_3 = [item['code_tt'] for item in filtered_8_3]
+        weight_code_tt_8_3 = [item['weight'] for item in filtered_8_3]
+        print(weight_code_tt_8_3)
+
+        if max_num_th:
+            if code_tt_8_3:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_8_3)
+                if total_weight_with_new_items <= 3200:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_3)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+            print("End correct_8_3")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_8_4(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_8")
+    max_num_th = None
+    try:
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            max_num_th = max(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_8_4 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '8' and item.get('priority') == 4]
+        code_tt_8_4 = [item['code_tt'] for item in filtered_8_4]
+        weight_code_tt_8_4 = [item['weight'] for item in filtered_8_4]
+        print(weight_code_tt_8_4)
+
+        if max_num_th:
+            if code_tt_8_4:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_8_4)
+                if total_weight_with_new_items <= 3200:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_4)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                        session.commit()
+            print("End correct_8_4")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_0_1(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_0_1")
+    max_num_th = None
+    try:
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            max_num_th = max(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_8_49 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '8' and item.get('priority') == 49]
+        code_tt_8_49 = [item['code_tt'] for item in filtered_8_49]
+        weight_code_tt_8_49 = [item['weight'] for item in filtered_8_49]
+        print(weight_code_tt_8_49)
+        if max_num_th:
+            if code_tt_8_49:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_8_49)
+                if total_weight_with_new_items <= 3200:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_49)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                        session.commit()
+
+            # if code_tt_8_49:
+            #     total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+            #     total_weight_with_new_items = total_weight + sum(weight_code_tt_8_49)
+            #     if total_weight_with_new_items <= 3200:
+            #         session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_49)).update(
+            #             {'num_th': max_num_th}, synchronize_session='fetch')
+            #
+            #         session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+            #             {'total_weight': func.sum(AddressTable.weight),
+            #              'total_count_boxes': func.sum(AddressTable.count_boxes)},
+            #             synchronize_session='fetch')
+            #
+            #         session.commit()
+            #
+            #         print(f"Total Weight for {max_num_th}: {total_weight_with_new_items}")
+
+            print("End correct_8_49")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+
+def correct_8_49(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_8_49")
+    max_num_th = None
+    try:
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th
+                                 if '8' in data['locations'] and data['total_weight'] < 2900 and num_th is not None]
+
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            max_num_th = max(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        # Получаем code_tt, у которых num_th равен None
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+        filtered_8_49 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '8' and item.get('priority') == 49]
+        code_tt_8_49 = [item['code_tt'] for item in filtered_8_49]
+        weight_code_tt_8_49 = [item['weight'] for item in filtered_8_49]
+        print(weight_code_tt_8_49)
+        if max_num_th:
+            if code_tt_8_49:
+                total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_8_49)
+                if total_weight_with_new_items <= 3200:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_49)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                        session.commit()
+
+            # if code_tt_8_49:
+            #     total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+            #     total_weight_with_new_items = total_weight + sum(weight_code_tt_8_49)
+            #     if total_weight_with_new_items <= 3200:
+            #         session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_49)).update(
+            #             {'num_th': max_num_th}, synchronize_session='fetch')
+            #
+            #         session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+            #             {'total_weight': func.sum(AddressTable.weight),
+            #              'total_count_boxes': func.sum(AddressTable.count_boxes)},
+            #             synchronize_session='fetch')
+            #
+            #         session.commit()
+            #
+            #         print(f"Total Weight for {max_num_th}: {total_weight_with_new_items}")
+
+            print("End correct_8_49")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_max_to_min(actually_info):
+    print("Start correct_max_to_min")
+    print(actually_info)
+    max_num_th = None
+    null_num_th = None
+    try:
+        null_num_th = [num_th for num_th, weight in actually_info.items() if weight == 0]
+
+        max_num_th = max(actually_info.keys(), key=lambda x: int(x.split('-')[1])) if actually_info else None
+
+        print("num_th with total_weight = 0:", null_num_th)
+        print("num_th with the highest numerical value:", max_num_th)
+
+        if null_num_th and max_num_th and null_num_th[0] < max_num_th:
+
+            session.query(ReestrTable).filter(ReestrTable.num_th == null_num_th[0]).delete(synchronize_session='fetch')
+            session.commit()
+
+            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                {'num_th': null_num_th[0]},
+                synchronize_session='fetch')
+            session.commit()
+
+            session.query(AddressTable).filter(AddressTable.num_th == max_num_th).update(
+                {'num_th': null_num_th[0]},
+                synchronize_session='fetch')
+            session.commit()
+
+            print(f"Updated ReestrTable.num_th from {max_num_th} to {null_num_th[0]}")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def correct_1(total_weights_by_num_th, details_by_num_th):
+    print("Start correct_1")
+    min_num_th = None
+    try:
+        norm_in_location_1 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '1' in data['locations'] and data['total_weight'] > 2900]
+
+        nedoves_in_location_1 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '1' in data['locations'] and data['total_weight'] < 2700]
+
+        print("norm_in_location_1:", norm_in_location_1)
+        print("nedoves_in_location_1:", nedoves_in_location_1)
+
+        # if norm_in_location_1:
+        #     min_num_th = max(
+        #         norm_in_location_1,
+        #         key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+        #         default=float('inf'))
+        #     print("Num_th with max total_weight in nedoves_in_location_1:", min_num_th)
+
+        code_tt_for_nedoves = []
+        if norm_in_location_1:
+            for num_th in norm_in_location_1:
+                if num_th in details_by_num_th:
+                    sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                    if sorted_items:  # Ensure there are items to process
+                        for item in sorted_items:
+                            if item['weight'] >= 200.0:
+                                code_tt_for_nedoves.append(item['code_tt'])
+                                break
+
+        print("code_tt_for_nedoves:", code_tt_for_nedoves)
+
+        if nedoves_in_location_1 is not None:
+            for num_th in nedoves_in_location_1:
+                session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                    code_tt_for_nedoves)).update({'num_th': num_th}, synchronize_session='fetch')
+                session.commit()
+
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {min_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                    session.commit()
+
+        if norm_in_location_1 is not None:
+            print("norm_in_location_1:", norm_in_location_1)
+            for num_th in norm_in_location_1:
+                print("norm_in_location_1:", norm_in_location_1)
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+            print("End correct_1")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def share_weight_8(total_weights_by_num_th, details_by_num_th):
+    print("Start share_weight_8")
+    min_num_th = None
+    try:
+        overweight_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '8' in data['locations'] and data['total_weight'] > 3100]
+
+        nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '8' in data['locations'] and data['total_weight'] < 2900]
+
+        print("overweight_in_location_8:", overweight_in_location_8)
+        print("nedoves_in_location_8:", nedoves_in_location_8)
+        if nedoves_in_location_8:
+            min_num_th = min(
+                nedoves_in_location_8,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("Num_th with minimum total_weight in nedoves_in_location_8:", min_num_th)
+
+        overweight_code_tt = []
+        if overweight_in_location_8:
+            for num_th in overweight_in_location_8:
+                if num_th in details_by_num_th:
+                    sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                    for item in sorted_items:
+                        if item.get('location') == '8':
+                            if total_weight > 3050:
+                                total_weight -= item['weight']
+                                overweight_code_tt.append(item['code_tt'])
+                            else:
+                                break
+
+        print("overweight_code_tt:", overweight_code_tt)
+        if min_num_th is not None:
+            print(min_num_th)
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overweight_code_tt)).update({'num_th': min_num_th}, synchronize_session='fetch')
+            session.commit()
+
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == min_num_th).group_by(AddressTable.num_th).first()
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {min_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                session.query(ReestrTable).filter(ReestrTable.num_th == min_num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                session.commit()
+
+            for num_th in overweight_in_location_8:
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+            print("End share_weight_8")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def share_weight_9(total_weights_by_num_th, details_by_num_th):
+    print("Start share_weight_9")
+    min_num_th = None
+    try:
+
+        check_12 = {}
+
+        for num_th, data in details_by_num_th.items():
+            count_code_tt = len(data)
+            if count_code_tt >= 12:
+                check_12[num_th] = count_code_tt
+
+        print("check_12:", check_12)
+
+        overweight_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '9' in data['locations'] and data['total_weight'] > 3100]
+
+        nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '9' in data['locations'] and data['total_weight'] < 3100]
+
+        nedoves_in_location_9_and_check_12 = [num_th for num_th in nedoves_in_location_9 if num_th not in check_12]
+
+        print("nedoves_in_location_9_and_check_12:", nedoves_in_location_9_and_check_12)
+        print("overweight_in_location_9:", overweight_in_location_9)
+        print("nedoves_in_location_9:", nedoves_in_location_9)
+        if nedoves_in_location_9_and_check_12:
+            min_num_th = min(
+                nedoves_in_location_9_and_check_12,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("Num_th with minimum total_weight in nedoves_in_location_9:", min_num_th)
+
+        overweight_code_tt = []
+        if overweight_in_location_9:
+            for num_th in overweight_in_location_9:
+                if num_th in details_by_num_th:
+                    sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'], reverse=True)
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                    for item in sorted_items:
+                        if item.get('location') == '9':
+                            if total_weight > 3100:
+                                total_weight -= item['weight']
+                                overweight_code_tt.append(item['code_tt'])
+                            else:
+                                break
+
+        print("overweight_code_tt:", overweight_code_tt)
+        if min_num_th is not None:
+            print(min_num_th)
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overweight_code_tt)).update({'num_th': min_num_th}, synchronize_session='fetch')
+            session.commit()
+
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == min_num_th).group_by(AddressTable.num_th).first()
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {min_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                session.query(ReestrTable).filter(ReestrTable.num_th == min_num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                session.commit()
+
+            for num_th in overweight_in_location_9:
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+            print("End share_weight_9")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def refactor_9(total_weights_by_num_th, details_by_num_th):
+    print("Start refactor_9")
+    try:
+        overweight_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '9' in data['locations'] and data['total_weight'] > 3100]
+
+        nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '9' in data['locations'] and data['total_weight'] < 2700]
+        print(nedoves_in_location_9)
+
+        location_9_6 = [num_th for num_th, data in total_weights_by_num_th if
+                            '9' in data['locations'] and '6' in data['locations']]
+
+        overweight_code_tt = []
+
+        if nedoves_in_location_9:
+            for num_th in overweight_in_location_9:
+                if num_th in details_by_num_th:
+                    sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                    total_weight = next(
+                        data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+                    print(total_weight)
+                    for item in sorted_items:
+                        if total_weight >= 3300:
+                            if item['weight'] > 400:
+                                total_weight -= item['weight']
+                                overweight_code_tt.append(item['code_tt'])
+                        else:
+                            break
+        if overweight_code_tt:
+            for num_th in nedoves_in_location_9:
+                print(num_th)
+                session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                    overweight_code_tt)).update({'num_th': num_th}, synchronize_session='fetch')
+                session.commit()
+
+
+        # if location_6_code_tt:
+        #     session.query(AddressTable).filter(
+        #         AddressTable.code_tt.in_(location_6_code_tt)).update({'num_th': None}, synchronize_session='fetch')
+        #     session.commit()
+
+        print("End refactor_9_6")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def refactor_9_nedoves_give_6():
+    print("Start refactor_9_6")
+    min_num_th = None
+    max_num_th = None
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+        total_weights_by_num_th = dict(total_weights_by_num_th)
+
+        nedoves_location_6 = [num_th for num_th, data in total_weights_by_num_th.items() if
+                              ('6' in data['locations'] and ('7' in data['locations'] or '8' in data['locations']))
+                              and data['total_weight'] < 3100]
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        location_9_6 = [num_th for num_th, data in total_weights_by_num_th if
+                            '9' in data['locations'] and '6' in data['locations']]
+
+        if nedoves_location_6:
+            min_num_th = min(
+                nedoves_location_6,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("Min weight num_th location 6:", min_num_th)
+
+        if location_9_6:
+            max_num_th = max(
+                location_9_6,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("Max weight num_th location 9 and 6:", max_num_th)
+
+        location_6_code_tt = []
+        if location_9_6:
+            if max_num_th in details_by_num_th:
+                sorted_items = sorted(details_by_num_th[max_num_th], key=lambda x: x['weight'])
+                total_weight = next(
+                    data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+
+                for item in sorted_items:
+                    if item.get('location') == '6':
+                        if total_weight != 0:
+                            total_weight -= item['weight']
+                            location_6_code_tt.append(item['code_tt'])
+                        else:
+                            break
+
+        if location_6_code_tt:
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                location_6_code_tt)).update({'num_th': min_num_th}, synchronize_session='fetch')
+            session.commit()
+            logging.debug("num_th updated successfully for location 6 code_tt.")
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        print("End refactor_9_6")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def refactor_9_6_nedoves(result):
+    print("Start refactor_9_6")
+    min_num_th = None
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        if not result:
+            overweight_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '9' in data['locations'] and data['total_weight'] > 3100]
+
+            nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '9' in data['locations'] and data['total_weight'] < 2700]
+
+            location_9_6 = [num_th for num_th, data in total_weights_by_num_th if
+                                '9' in data['locations'] and '6' in data['locations']]
+
+            if nedoves_in_location_9:
+                min_num_th = min(
+                    nedoves_in_location_9,
+                    key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                    default=float('inf'))
+                print("Num_th with maximum total_weight in nedoves_in_location_9:", min_num_th)
+
+            overweight_code_tt_9 = []
+
+            if overweight_in_location_9 and min_num_th:
+                for num_th in overweight_in_location_9:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '9':
+                                if total_weight > 3004:
+                                    total_weight -= item['weight']
+                                    overweight_code_tt_9.append(item['code_tt'])
+                                else:
+                                    break
+
+            if overweight_code_tt_9:
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(overweight_code_tt_9)).update({'num_th': min_num_th}, synchronize_session='fetch')
+                session.commit()
+
+        print("End refactor_9_6")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def add_num_th_9(result, total_weights_by_num_th, details_by_num_th):
+    print("Start add_num_th_9")
+    try:
+        if result:
+            overweight_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '9' in data['locations'] and data['total_weight'] > 3100]
+            overweight_code_tt = []
+            if overweight_in_location_9:
+                for num_th in overweight_in_location_9:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '9':
+                                if total_weight > 3100:
+                                    total_weight -= item['weight']
+                                    overweight_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            highest_num_th = get_highest_num_th()
+            new_id = str(uuid.uuid4())
+            if highest_num_th:
+                new_num_th = increment_num_th(highest_num_th.num_th)
+                date_th = highest_num_th.date_th
+            new_record = ReestrTable(num_th=new_num_th, total_weight=Decimal('0.0'), date_th=date_th, id=new_id)
+            session.add(new_record)
+            session.commit()
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overweight_code_tt)).update({'num_th': new_num_th}, synchronize_session='fetch')
+            session.commit()
+
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == new_num_th).group_by(AddressTable.num_th).first()
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {new_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                session.query(ReestrTable).filter(ReestrTable.num_th == new_num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                session.commit()
+
+            for num_th in overweight_in_location_9:
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+        print("End add_num_th_9")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def add_num_th_8(result, total_weights_by_num_th, details_by_num_th):
+    print("Start add_num_th_8")
+    try:
+        if result:
+            overweight_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '8' in data['locations'] and data['total_weight'] > 3100]
+            overweight_code_tt = []
+            if overweight_in_location_8:
+                for num_th in overweight_in_location_8:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '8':
+                                if total_weight > 3100:
+                                    total_weight -= item['weight']
+                                    overweight_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            highest_num_th = get_highest_num_th()
+            new_id = str(uuid.uuid4())
+            if highest_num_th:
+                new_num_th = increment_num_th(highest_num_th.num_th)
+                date_th = highest_num_th.date_th
+            new_record = ReestrTable(num_th=new_num_th, total_weight=Decimal('0.0'), date_th=date_th, id=new_id)
+            session.add(new_record)
+            session.commit()
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overweight_code_tt)).update({'num_th': new_num_th}, synchronize_session='fetch')
+            session.commit()
+
+            total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                               func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                .filter(AddressTable.num_th == new_num_th).group_by(AddressTable.num_th).first()
+
+            if total_weight_query:
+                total_weight, total_count_boxes = total_weight_query
+                print(f"Total Weight for {new_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                session.query(ReestrTable).filter(ReestrTable.num_th == new_num_th).update(
+                    {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+                session.commit()
+
+            for num_th in overweight_in_location_8:
+
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                    session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+
+            session.commit()
+        else:
+            print("End add_num_th_8")
+
+        print("End add_num_th_8")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+# def check_2_weight_num_th_9(total_weights_by_num_th, details_by_num_th):
+#     print("Start check_2_weight_num_th_9")
+#     nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th
+#                              if '9' in data['locations'] and data['total_weight'] < 2700 and num_th is not None]
+#     code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+#     filtered_9 = [item for item in details_by_num_th.get(None, []) if item.get(
+#         'location') == '8' and item.get('priority') < 49]
+#     code_tt_9 = [item['code_tt'] for item in filtered_9]
+#     weight_code_tt_9 = [item['weight'] for item in filtered_9]
+#     if nedoves_in_location_9:
+#         if filtered_9:
+#             total_weight = next(
+#                 data['total_weight'] for num, data in total_weights_by_num_th if num == nedoves_in_location_9)
+#             total_weight_with_new_items = total_weight + sum(weight_code_tt_8_49)
+#             if total_weight_with_new_items <= 3200:
+#                 session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_8_49)).update(
+#                     {'num_th': max_num_th}, synchronize_session='fetch')
+#                 session.commit()
+#
+#                 total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+#                                                    func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+#                     .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+#
+#                 if total_weight_query:
+#                     total_weight, total_count_boxes = total_weight_query
+#                     print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+#                     session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+#                         {'total_weight': total_weight, 'total_count_boxes': total_count_boxes}, synchronize_session='fetch')
+#                     session.commit()
+
+
+def check_weight_num_th_9():
+    print("Start check_weight_num_th_9")
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        all_location_9 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations']]
+
+        total_weight_location_9 = sum(
+            data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_9)
+
+        num_th_in_location_9 = len(all_location_9)
+
+        if num_th_in_location_9 > 0:
+            average_weight_location_9 = total_weight_location_9 / num_th_in_location_9
+
+        else:
+            average_weight_location_9 = 0.0
+
+            print(f"ТН с location 7 - {all_location_9}. Их текущий суммарный вес - {total_weight_location_9}."
+                  f" Их перевес - {average_weight_location_9}")
+
+        if average_weight_location_9 >= 3300:
+            return "Overweight"
+        elif num_th_in_location_9 > 1 and average_weight_location_9 < 2800:
+            return "Underweight"
+        else:
+            return "Norm"
+
+    except ZeroDivisionError:
+        return "Error: Division by zero occurred"
+
+
+def check_nedoves_num_th_8(total_weights_by_num_th):
+    print("Start check_weight_num_th_8")
+    try:
+        all_location_8 = [num_th for num_th, data in total_weights_by_num_th if '8' in data['locations']]
+
+        total_weight_location_8 = sum(
+            data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_8)
+
+        num_th_in_location_8 = len(all_location_8)
+
+        if num_th_in_location_8 > 0:
+            average_weight_location_8 = total_weight_location_8 - (3100 * num_th_in_location_8)
+        else:
+            average_weight_location_8 = 0.0
+
+        print("Перевес на location 8:", average_weight_location_8)
+        print("End check_weight_num_th_8")
+
+        return 500 <= average_weight_location_8 <= 4000
+
+    except ZeroDivisionError:
+        return 0.0
+
+
+def refactor_8(result):
+    print("Start refactor_nedoves_num_th_8")
+    max_num_th = None
+    try:
+        if not result:
+
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            min_nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                     '8' in data['locations'] and data['total_weight'] > 1500]
+
+            max_nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                     '8' in data['locations'] and data['total_weight'] < 1500]
+
+            if min_nedoves_in_location_8:
+                max_num_th = max(
+                    min_nedoves_in_location_8,
+                    key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                    default=float('inf'))
+                print("Num_th with maximum total_weight in nedoves_in_location_8:", max_num_th)
+
+            location_8_code_tt = []
+
+            if max_nedoves_in_location_8:
+                for num_th in max_nedoves_in_location_8:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '8':
+                                if total_weight != 0:
+                                    total_weight -= item['weight']
+                                    location_8_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            if max_num_th is not None:
+                print(max_num_th)
+                session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                    location_8_code_tt)).update({'num_th': max_num_th}, synchronize_session='fetch')
+                session.commit()
+
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            print("End refactor_nedoves_num_th_8")
+            return
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def check_nedoves_6_6(result):
+    print("Start check_nedoves_6")
+    max_num_th = None
+    try:
+        if not result:
+
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_6 = [num_th for num_th, data in total_weights_by_num_th if
+                                     '6' in data['locations'] and data['total_weight'] < 2800]
+
+            print(nedoves_in_location_6)
+
+            total_weight_location_6 = sum(
+                data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in nedoves_in_location_6)
+
+            total_with_nedoves_6 = len(nedoves_in_location_6)
+
+            if total_with_nedoves_6 == 2:
+                for num_th in nedoves_in_location_6:
+                    if num_th is not None:
+                        max_num_th = num_th
+                        print("Num_th is not None in location 6:", max_num_th)
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+            get_6_with_None = [item for item in details_by_num_th.get(None, []) if item.get('location') == '6']
+            code_tt_6_None = [item['code_tt'] for item in get_6_with_None]
+            weight_code_tt_6_None = [item['weight'] for item in get_6_with_None]
+            print(weight_code_tt_6_None)
+
+            if 3400 > total_weight_location_6:
+                for num_th in nedoves_in_location_6:
+                    if num_th is None:
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                        total_weight_with_new_items = total_weight + sum(weight_code_tt_6_None)
+                        if total_weight_with_new_items <= 3200:
+                            session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_6_None)).update(
+                                {'num_th': max_num_th}, synchronize_session='fetch')
+                            session.commit()
+                        total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                           func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                            .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                        if total_weight_query:
+                            total_weight, total_count_boxes = total_weight_query
+                            print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                            session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                                {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                                synchronize_session='fetch')
+                            session.commit()
+
+            print("End refactor_nedoves_num_th_8")
+            return
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def check_nedoves_6_0(result):
+    print("Start check_nedoves_6_0")
+    max_num_th = None
+    try:
+        if not result:
+
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_6 = [num_th for num_th, data in total_weights_by_num_th if
+                                     '6' in data['locations'] and data['total_weight'] < 2800]
+
+            print(nedoves_in_location_6)
+
+            total_weight_location_6 = sum(
+                data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in nedoves_in_location_6)
+
+            total_with_nedoves_6 = len(nedoves_in_location_6)
+
+            for num_th in nedoves_in_location_6:
+                if num_th is not None:
+                    max_num_th = num_th
+                    print("Num_th is not None in location 6:", max_num_th)
+
+            # Получаем code_tt, у которых num_th равен None
+            code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+            get_0_with_None = [item for item in details_by_num_th.get(None, []) if item.get('location') == '0']
+            code_tt_0_None = [item['code_tt'] for item in get_0_with_None]
+            weight_code_tt_0_None = [item['weight'] for item in get_0_with_None]
+            print(weight_code_tt_0_None)
+
+            if max_num_th:
+                total_weight = next(
+                    data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+                total_weight_with_new_items = total_weight + sum(weight_code_tt_0_None)
+                if total_weight_with_new_items < 3350:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(code_tt_0_None)).update(
+                        {'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label(
+                                                       'total_count_boxes')) \
+                    .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(
+                        f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                    session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+                    session.commit()
+
+            print("End refactor_nedoves_num_th_8")
+            return
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def refactor_8_nedoves(result):
+    print("Start refactor_8_nedoves")
+    min_num_th = None
+    try:
+        if not result:
+
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            pereves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '8' in data['locations'] and data['total_weight'] > 2800]
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '8' in data['locations'] and data['total_weight'] < 2800]
+
+            if nedoves_in_location_8:
+                min_num_th = min(
+                    nedoves_in_location_8,
+                    key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                    default=float('inf'))
+                print("Num_th with maximum total_weight in nedoves_in_location_8:", min_num_th)
+
+            pereves_8_code_tt = []
+
+            if pereves_in_location_8:
+                for num_th in pereves_in_location_8:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '8':
+                                if total_weight > 2944:
+                                    total_weight -= item['weight']
+                                    pereves_8_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            if pereves_8_code_tt:
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(pereves_8_code_tt)).update({'num_th': min_num_th}, synchronize_session='fetch')
+                session.commit()
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        print("End refactor_nedoves_num_th_8")
+        return
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def refactor_7_if_norm():
+    print("Start refactor_7_if_norm")
+    max_num_th = None
+    min_num_th = None
+    total_weight_min_th = None
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        pereves_in_location_7 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '7' in data['locations'] and data['total_weight'] > 3200]
+
+        nedoves_in_location_7 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '7' in data['locations'] and data['total_weight'] < 2700]
+
+        if nedoves_in_location_7:
+            min_num_th = min(
+                nedoves_in_location_7,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("Минимальная в 9:", max_num_th)
+
+        if min_num_th:
+            if min_num_th in details_by_num_th:
+                total_weight_min_th = next(
+                    data['total_weight'] for num, data in total_weights_by_num_th if num == min_num_th)
+
+        if pereves_in_location_7:
+            max_num_th = max(
+                pereves_in_location_7,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("максимальная в 7:", max_num_th)
+
+        pereves_code_tt_7 = []
+
+        if max_num_th and min_num_th:
+            if max_num_th in details_by_num_th:
+                sorted_items = sorted(details_by_num_th[max_num_th], key=lambda x: x['weight'])
+                total_weight = total_weight_min_th
+                for item in sorted_items:
+                    if item.get('location') == '7' or '6':
+                        if total_weight <= 3150:
+                            total_weight += item['weight']
+                            pereves_code_tt_7.append(item['code_tt'])
+                        else:
+                            break
+
+        if pereves_code_tt_7:
+            session.query(AddressTable).filter(
+                AddressTable.code_tt.in_(pereves_code_tt_7)).update({'num_th': min_num_th}, synchronize_session='fetch')
+            session.commit()
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        print("End refactor_nedoves_num_th_8")
+        return
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+
+def give_6_from_7_pereves_to_9_with_nedoves():
+    print("Start refactor_7_pereves")
+    max_num_th = None
+    min_num_th = None
+    total_weight_min_th = None
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        pereves_in_location_7 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '7' in data['locations'] and data['total_weight'] > 3200]
+
+        nedoves_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if
+                                    '9' in data['locations'] and data['total_weight'] < 2700]
+
+        if nedoves_in_location_9:
+            min_num_th = min(
+                nedoves_in_location_9,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("Минимальная в 9:", max_num_th)
+
+        if min_num_th:
+            if min_num_th in details_by_num_th:
+                total_weight_min_th = next(
+                    data['total_weight'] for num, data in total_weights_by_num_th if num == min_num_th)
+
+        if pereves_in_location_7:
+            max_num_th = max(
+                pereves_in_location_7,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("максимальная в 7:", max_num_th)
+
+        pereves_code_tt_7 = []
+
+        if max_num_th and min_num_th:
+            if max_num_th in details_by_num_th:
+                sorted_items = sorted(details_by_num_th[max_num_th], key=lambda x: x['weight'])
+                total_weight = total_weight_min_th
+                for item in sorted_items:
+                    if item.get('location') == '6':
+                        if total_weight <= 3150:
+                            total_weight += item['weight']
+                            pereves_code_tt_7.append(item['code_tt'])
+                        else:
+                            break
+
+        if pereves_code_tt_7:
+            session.query(AddressTable).filter(
+                AddressTable.code_tt.in_(pereves_code_tt_7)).update({'num_th': min_num_th}, synchronize_session='fetch')
+            session.commit()
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        print("End refactor_nedoves_num_th_8")
+        return
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def refactor_8_pereves(result):
+    print("Start refactor_8_pereves")
+    try:
+        if result:
+
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            pereves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '8' in data['locations'] and data['total_weight'] < 2800]
+
+            location_8_6 = [num_th for num_th, data in total_weights_by_num_th if
+                                '8' in data['locations'] and '6' in data['locations']]
+
+            location_8_0 = [num_th for num_th, data in total_weights_by_num_th if
+                                '8' in data['locations'] and '0' in data['locations']]
+
+            location_6_code_tt = []
+
+            location_0_code_tt = []
+
+            if location_8_0:
+                for num_th in location_8_0:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '0':
+                                if total_weight != 0:
+                                    total_weight -= item['weight']
+                                    location_0_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            if location_8_6:
+                for num_th in location_8_6:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '0':
+                                if total_weight != 0:
+                                    total_weight -= item['weight']
+                                    location_6_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            if location_6_code_tt:
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(location_6_code_tt)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+            if location_0_code_tt:
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(location_0_code_tt)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+        print("End refactor_nedoves_num_th_8")
+        return
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def refactor_8_6_and_8_0(result):
+    print("Start refactor_nedoves_num_th_8")
+    try:
+        if not result:
+
+            total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+            nedoves_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '8' in data['locations'] and data['total_weight'] < 2800]
+
+            location_8_6 = [num_th for num_th, data in total_weights_by_num_th if
+                                '8' in data['locations'] and '6' in data['locations']]
+
+            location_8_0 = [num_th for num_th, data in total_weights_by_num_th if
+                                '8' in data['locations'] and '0' in data['locations']]
+
+            location_6_code_tt = []
+
+            location_0_code_tt = []
+
+            if location_8_0:
+                for num_th in location_8_0:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '0':
+                                if total_weight != 0:
+                                    total_weight -= item['weight']
+                                    location_0_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            if location_8_6:
+                for num_th in location_8_6:
+                    if num_th in details_by_num_th:
+                        sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                        total_weight = next(
+                            data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                        for item in sorted_items:
+                            if item.get('location') == '0':
+                                if total_weight != 0:
+                                    total_weight -= item['weight']
+                                    location_6_code_tt.append(item['code_tt'])
+                                else:
+                                    break
+
+            if location_6_code_tt:
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(location_6_code_tt)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+            if location_0_code_tt:
+                session.query(AddressTable).filter(
+                    AddressTable.code_tt.in_(location_0_code_tt)).update({'num_th': None}, synchronize_session='fetch')
+                session.commit()
+
+        print("End refactor_nedoves_num_th_8")
+        return
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def check_weight_num_th_8(total_weights_by_num_th):
+    print("Start check_weight_num_th_8")
+    try:
+        all_location_8 = [num_th for num_th, data in total_weights_by_num_th if '8' in data['locations']]
+
+        total_weight_location_8 = sum(
+            data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_8)
+
+        num_th_in_location_8 = len(all_location_8)
+
+        if num_th_in_location_8 > 0:
+            average_weight_location_8 = total_weight_location_8 - (3100 * num_th_in_location_8)
+        else:
+            average_weight_location_8 = 0.0
+
+        print("Перевес на location 8:", average_weight_location_8)
+        print("End check_weight_num_th_8")
+
+        return 500 <= average_weight_location_8 <= 4000
+
+    except ZeroDivisionError:
+        return 0.0
+
+
+def check_weight_num_th_7(total_weights_by_num_th):
+    try:
+        all_location_7 = [num_th for num_th, data in total_weights_by_num_th if '7' in data['locations']]
+
+        total_weight_location_7 = sum(
+            data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_7)
+
+        num_th_in_location_7 = len(all_location_7)
+
+        if num_th_in_location_7 > 0:
+            average_weight_location_7 = total_weight_location_7 - (3100 * num_th_in_location_7)
+            if 500 <= average_weight_location_7 <= 4000:
+                return True
+            else:
+                average_weight_location_7 = 0.0
+
+        print(f"ТН с location 7 - {all_location_7}. Их текущий суммарный вес - {total_weight_location_7}. Их перевес - {average_weight_location_7}")
+
+    except ZeroDivisionError:
+        return 0.0
+
+
+def check_weight_num_th_7():
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        all_location_7 = [num_th for num_th, data in total_weights_by_num_th if '7' in data['locations']]
+
+        total_weight_location_7 = sum(
+            data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_7)
+
+        num_th_in_location_7 = len(all_location_7)
+
+        if num_th_in_location_7 > 0:
+            average_weight_location_7 = total_weight_location_7 / num_th_in_location_7
+        else:
+            average_weight_location_7 = 0.0
+
+        print(f"ТН с location 7 - {all_location_7}. Их текущий суммарный вес - {total_weight_location_7}."
+              f" Их перевес - {average_weight_location_7}")
+
+        if average_weight_location_7 >= 3300:
+            return "Overweight"
+        elif average_weight_location_7 < 2700:
+            return "Underweight"
+        else:
+            return "Norm"
+
+    except ZeroDivisionError:
+        return "Error: Division by zero occurred"
+
+
+def check_weight_num_th_6(total_weights_by_num_th):
+    try:
+        all_location_6 = [num_th for num_th, data in total_weights_by_num_th if '6' in data['locations']]
+
+        total_weight_location_6 = sum(
+            data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_6)
+
+        num_th_in_location_6 = len(all_location_6)
+
+        if num_th_in_location_6 > 0:
+            average_weight_location_6 = total_weight_location_6 - (3100 * num_th_in_location_6)
+        else:
+            average_weight_location_6 = 0.0
+
+        print(f"ТН с location 6 - {all_location_6}. Их текущий суммарный вес - {total_weight_location_6}. Их перевес - {average_weight_location_6}")
+
+        return 250 <= average_weight_location_6 <= 4000
+
+    except ZeroDivisionError:
+        return 0.0
+
+
+def check_weight_num_th_5():
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        all_location_5 = [num_th for num_th, data in total_weights_by_num_th if '5' in data['locations']]
+
+        total_weight_location_5 = sum(
+            data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_5)
+
+        num_th_in_location_5 = len(all_location_5)
+
+        if num_th_in_location_5 >= 2:
+            average_weight_location_2 = total_weight_location_5 - (3000 * num_th_in_location_5)
+            print(average_weight_location_2)
+            return 400 <= average_weight_location_2 <= 4000
+
+        if num_th_in_location_5 < 2:
+            all_location_5_4 = [num_th for num_th, data in total_weights_by_num_th if
+                                '4' in data['locations'] and '5' in data['locations']]
+            all_location_4 = [num_th for num_th, data in total_weights_by_num_th if '4' in data['locations']]
+
+            if all_location_5_4 and all_location_4:
+                overweight_in_location_5 = [num_th for num_th, data in total_weights_by_num_th if
+                                            '5' in data['locations'] and data['total_weight'] > 3100]
+
+                overweight_code_tt_4_from_5 = []
+                if overweight_in_location_5:
+                    for num_th in overweight_in_location_5:
+                        if num_th in details_by_num_th:
+                            sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                            total_weight = next(
+                                data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                            for item in sorted_items:
+                                if item.get('location') == '4':
+                                    if total_weight > 3300:
+                                        total_weight -= item['weight']
+                                        overweight_code_tt_4_from_5.append(item['code_tt'])
+                                    else:
+                                        break
+
+                location_4_data = [(
+                    num_th, data['total_weight']) for num_th, data in total_weights_by_num_th if '4' in data['locations']]
+                min_num_th = min(location_4_data, key=lambda x: x[1])[0]
+                if min_num_th:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                        overweight_code_tt_4_from_5)).update({'num_th': min_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == min_num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {min_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                    session.query(ReestrTable).filter(ReestrTable.num_th == min_num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+                    session.commit()
+
+                for num_th in overweight_in_location_5:
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                        session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+
+    except ZeroDivisionError:
+        return 0.0
+
+
+# def check_weight_num_th_5(total_weights_by_num_th):
+#     try:
+#         all_location_5 = [num_th for num_th, data in total_weights_by_num_th if '5' in data['locations']]
+#
+#         total_weight_location_5 = sum(
+#             data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_5)
+#
+#         num_th_in_location_5 = len(all_location_5)
+#
+#         if num_th_in_location_5 > 0:
+#             average_weight_location_2 = total_weight_location_5 - (3000 * num_th_in_location_5)
+#         else:
+#             average_weight_location_2 = 0.0
+#
+#         print(average_weight_location_2)
+#
+#         return 400 <= average_weight_location_2 <= 4000
+#
+#     except ZeroDivisionError:
+#         return 0.0
+
+
+def check_weight_num_th_2():
+    try:
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        #all_location_2 = [num_th for num_th, data in total_weights_by_num_th if '2' in data['locations']]
+        all_location_2_and_1 = [num_th for num_th, data in total_weights_by_num_th if
+                                '2' in data['locations'] or '1' in data['locations']]
+
+        total_weight_location_2 = sum(
+            data['total_weight'] for num_th, data in total_weights_by_num_th if num_th in all_location_2_and_1)
+
+        num_th_in_location_2_1 = len(all_location_2_and_1)
+
+        nedoves_in_location_2_1 = [num_th for num_th, data in total_weights_by_num_th
+                                   if ('2' in data['locations'] or '1' in data['locations'])
+                                   and data['total_weight'] < 2800]
+
+        total_nedoves_in_location_2_1 = len(nedoves_in_location_2_1)
+
+        if num_th_in_location_2_1 > 0:
+            average_weight_location_2_1 = total_weight_location_2 - (3000 * num_th_in_location_2_1)
+            print(average_weight_location_2_1)
+            if 800 <= average_weight_location_2_1 <= 4000:
+                return True
+
+            elif total_nedoves_in_location_2_1 == 2:
+                location_1_data = [(num_th, data['total_weight']) for num_th, data in total_weights_by_num_th if '1' in data['locations']]
+                max_num_th = max(location_1_data, key=lambda x: x[1])[0]  # Получаем num_th с максимальным total_weight
+                min_num_th = min(location_1_data, key=lambda x: x[1])[0]  # Получаем num_th с минимальным total_weight
+                print(max_num_th, min_num_th)
+                total_weight = next(
+                    data['total_weight'] for num, data in total_weights_by_num_th if num == min_num_th)
+                sorted_items = sorted(details_by_num_th[min_num_th], key=lambda x: x['weight'], reverse=True)
+
+                from_min_to_max_code_tt = []
+
+                for item in sorted_items:
+                    if item.get('location') == '1' or '2':
+                        if total_weight > 1700:
+                            total_weight -= item['weight']
+                            from_min_to_max_code_tt.append(item['code_tt'])
+                        else:
+                            break
+
+                if from_min_to_max_code_tt:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                        from_min_to_max_code_tt)).update({'num_th': max_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == max_num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {max_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                        session.query(ReestrTable).filter(ReestrTable.num_th == max_num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+                    else:
+                        print("Error")
+                    return
+
+            else:
+                overweight_in_location_2 = [num_th for num_th, data in total_weights_by_num_th if
+                                        '2' in data['locations'] and data['total_weight'] > 3300]
+                overweight_code_tt = []
+                if overweight_in_location_2:
+                    for num_th in overweight_in_location_2:
+                        if num_th in details_by_num_th:
+                            sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                            total_weight = next(
+                                data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                            for item in sorted_items:
+                                if item.get('location') == '1':
+                                    if total_weight > 3300:
+                                        total_weight -= item['weight']
+                                        overweight_code_tt.append(item['code_tt'])
+                                    else:
+                                        break
+                location_2_data = [(num_th, data['total_weight']) for num_th, data in total_weights_by_num_th if '2' in data['locations']]
+                max_num_th = max(location_2_data, key=lambda x: x[1])[0]  # Получаем num_th с максимальным total_weight
+                min_num_th = min(location_2_data, key=lambda x: x[1])[0]  # Получаем num_th с минимальным total_weight
+                print(max_num_th, min_num_th)
+                if max_num_th:
+                    session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                        overweight_code_tt)).update({'num_th': min_num_th}, synchronize_session='fetch')
+                    session.commit()
+
+                total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                   func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                    .filter(AddressTable.num_th == min_num_th).group_by(AddressTable.num_th).first()
+
+                if total_weight_query:
+                    total_weight, total_count_boxes = total_weight_query
+                    print(f"Total Weight for {min_num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+                    session.query(ReestrTable).filter(ReestrTable.num_th == min_num_th).update(
+                        {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                        synchronize_session='fetch')
+                    session.commit()
+
+                for num_th in overweight_in_location_2:
+                    total_weight_query = session.query(func.sum(AddressTable.weight).label('total_weight'),
+                                                       func.sum(AddressTable.count_boxes).label('total_count_boxes')) \
+                        .filter(AddressTable.num_th == num_th).group_by(AddressTable.num_th).first()
+
+                    if total_weight_query:
+                        total_weight, total_count_boxes = total_weight_query
+                        print(f"Total Weight for {num_th}: {total_weight}, Total Count Boxes: {total_count_boxes}")
+
+                        session.query(ReestrTable).filter(ReestrTable.num_th == num_th).update(
+                            {'total_weight': total_weight, 'total_count_boxes': total_count_boxes},
+                            synchronize_session='fetch')
+                        session.commit()
+
+    except ZeroDivisionError:
+        return 0.0
+
+# def adjusting_location_9_? (total_weights_by_num_th, details_by_num_th):
+#     try:
+#         all_location_9 = {num_th: data['total_weight'] for num_th, data in total_weights_by_num_th if
+#                           '9' in data['locations']}
+#         overweight_in_location_9 = {num_th: data['total_weight'] for num_th, data in total_weights_by_num_th if
+#                                     '9' in data['locations'] and data['total_weight'] > Decimal('3500')}
+#
+#         min_weight_num_th = min(all_location_9.items(), key=lambda x: x[1])
+#         for num_th, total_weight in overweight_in_location_9.items():
+#             if num_th in details_by_num_th:
+#                 sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+#                 for item in sorted_items:
+#                     if item.get('location') == '9':
+#                         if total_weight > Decimal('3500'):
+#                             total_weight -= item['weight']
+#                             if min_weight_num_th[1] + item['weight'] <= Decimal('3500'):
+#                                 min_weight_num_th = (min_weight_num_th[0], min_weight_num_th[1] + item['weight'])
+#                                 session.query(AddressTable).filter_by(code_tt=item['code_tt']).update(
+#                                     {'num_th': min_weight_num_th[0]}, synchronize_session='fetch')
+#                             else:
+#                                 all_location_9[min_weight_num_th[0]] = min_weight_num_th[1]
+#                                 all_location_9[num_th] = total_weight
+#                                 min_weight_num_th = min(
+#                                     {k: v for k, v in all_location_9.items() if v <= Decimal('3500')}.items(),
+#                                     key=lambda x: x[1])
+#                         else:
+#                             break
+#         session.commit()
+#         return "Location 9 adjusted successfully"
+#
+#     except Exception as e:
+#         print(f"Error: {e}")
+#         session.rollback()
+#         return None
+
+
+def adjusting_location_9(total_weights_by_num_th, details_by_num_th):
+    try:
+        all_location_9 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations']]
+        overweight_in_location_9 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations'] and data['total_weight'] > 3100]
+
+        overweight_code_tt = []
+
+        if overweight_in_location_9:
+            for num_th in overweight_in_location_9:
+                if num_th in details_by_num_th:
+                    # Сортируем по весу от меньшего к большему
+                    sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                    total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                    for item in sorted_items:
+                        if item.get('location') == '9':
+                            if total_weight > 3100:
+                                total_weight -= item['weight']
+                                overweight_code_tt.append(item['code_tt'])
+                            else:
+                                break
+
+        location_9_8 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations'] and '8' in data['locations']]
+        location_9_7 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations'] and '7' in data['locations']]
+        location_9_6 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations'] and '6' in data['locations']]
+        if location_9_8:
+            session.query(AddressTable).filter(AddressTable.num_th.in_(location_9_8), AddressTable.location == '8').update({'num_th': None}, synchronize_session='fetch')
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(overweight_code_tt)).update({'num_th': location_9_8[0]}, synchronize_session='fetch')
+            session.commit()
+        if location_9_7:
+            session.query(AddressTable).filter(AddressTable.num_th.in_(location_9_7), AddressTable.location == '7').update({'num_th': None}, synchronize_session='fetch')
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(overweight_code_tt)).update({'num_th': location_9_7[0]}, synchronize_session='fetch')
+            session.commit()
+        if location_9_6:
+            session.query(AddressTable).filter(AddressTable.num_th.in_(location_9_6), AddressTable.location == '6').update({'num_th': None}, synchronize_session='fetch')
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(overweight_code_tt)).update({'num_th': location_9_6[0]}, synchronize_session='fetch')
+            session.commit()
+
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+def adjusting_location_8(total_weights_by_num_th, details_by_num_th):
+    try:
+        all_location_8 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations']]
+        overweight_in_location_8 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations'] and data['total_weight'] > 3500]
+
+        overweight_code_tt = []
+
+        if overweight_in_location_8:
+            for num_th in overweight_in_location_8:
+                if num_th in details_by_num_th:
+                    # Сортируем по весу от меньшего к большему
+                    sorted_items = sorted(details_by_num_th[num_th], key=lambda x: x['weight'])
+                    total_weight = next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th)
+
+                    for item in sorted_items:
+                        if item.get('location') == '9':
+                            if total_weight > 3500:
+                                total_weight -= item['weight']
+                                overweight_code_tt.append(item['code_tt'])
+                            else:
+                                break
+
+        location_9_8 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations'] and '8' in data['locations']]
+        location_9_7 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations'] and '7' in data['locations']]
+        location_9_6 = [num_th for num_th, data in total_weights_by_num_th if '9' in data['locations'] and '6' in data['locations']]
+        if location_9_8:
+            session.query(AddressTable).filter(AddressTable.num_th.in_(location_9_8), AddressTable.location == '8').update({'num_th': None}, synchronize_session='fetch')
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(overweight_code_tt)).update({'num_th': location_9_8[0]}, synchronize_session='fetch')
+            session.commit()
+        if location_9_7:
+            session.query(AddressTable).filter(AddressTable.num_th.in_(location_9_7), AddressTable.location == '7').update({'num_th': None}, synchronize_session='fetch')
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(overweight_code_tt)).update({'num_th': location_9_7[0]}, synchronize_session='fetch')
+            session.commit()
+        if location_9_6:
+            session.query(AddressTable).filter(AddressTable.num_th.in_(location_9_6), AddressTable.location == '6').update({'num_th': None}, synchronize_session='fetch')
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(overweight_code_tt)).update({'num_th': location_9_6[0]}, synchronize_session='fetch')
+            session.commit()
+
+    except Exception as e:
+        print(f"Error: {e}")
+
+
 
 # def can_assign_driver(current_location, current_weight, location, priority, weight):
 #     weight_limit = 3000

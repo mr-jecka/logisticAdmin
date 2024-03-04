@@ -8,14 +8,25 @@ import markup as nav
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from database import get_drivers_for_route, get_routes, insert_driver_for_route, get_optimal_json, \
-    get_main_json, get_info_for_report, insert_user_id_for_addresses, get_main_json_14, calculate_weights_by_num_th,\
-    display_assigned_driver_details, assign_drivers_to_addresses, num_th_to_drivers, update_index_numbers
+    get_main_json, get_info_for_report, insert_user_id_for_addresses, get_main_json_14, calculate_details_by_num_th,\
+    display_assigned_driver_details, assign_drivers_to_addresses, num_th_to_drivers, update_index_numbers,\
+    adjusting_location_9, adjusting_location_8, actually_weight_reestr_table, check_weight_num_th_9, add_num_th_9,\
+    check_weight_num_th_7, add_num_th_7, add_num_th_2, check_weight_num_th_2, add_num_th_5, check_weight_num_th_5, \
+    check_12_th_2, insert_for_7_with_nedoves, add_num_th_6, check_weight_num_th_6, share_weight_9, share_weight_8,\
+    add_num_th_8, check_weight_num_th_8, correct_8_0, correct_8_49, correct_8_4, correct_8_3, correct_8_2, correct_8_1,\
+    correct_0_2, correct_0_1, correct_1, correct_max_to_min, actually_details_num_th, refactor_9_nedoves_give_6, \
+    refactor_9, refactor_8_6_and_8_0, refactor_8, moving_6_3_to_num_th_8, moving_6_4_to_num_th_8,\
+    moving_6_2_to_num_th_8, moving_6_1_to_num_th_8, moving_6_44_to_num_th_8, moving_6_45_to_num_th_8,\
+    moving_6_49_to_num_th_8, moving_6_6_to_num_th_8, check_nedoves_6_6, check_nedoves_6_0, refactor_9_6_nedoves, \
+    refactor_8_pereves, refactor_8_nedoves, give_6_from_7_pereves_to_9_with_nedoves, refactor_7_if_norm
+
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
 import logging
 from aiogram import types
 from PIL import Image, ImageDraw, ImageFont
 import database
+from openpyxl.utils import get_column_letter
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment
 
@@ -27,7 +38,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
+TOKEN = "6441679596:AAEGdooD8k-KV-QGaupC4P4fNRAWguj-aEE"
+
+#TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
 # TOKEN = "6441679596:AAEYabzPiA4dg0GOlBISJk0BhAjqn1OPjF0"
 #TOKEN = "6489569901:AAHBPmIvgYsxj_M_p6x9FnG_RThYEBthcRc" #@MoveTrafficBot
 
@@ -104,11 +117,269 @@ async def start_distribute_route(query: types.CallbackQuery):
 
 @dp.callback_query_handler(text="overWeight_2")
 async def start_distribute_route(query: types.CallbackQuery):
-    calculate_weights_by_num_th()
-    #assign_drivers_to_addresses()
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Было изначально:", total_weights_by_num_th)
+    print("Было изначально:", details_by_num_th)
+    result_9 = check_weight_num_th_9()
+
+    if result_9 == "Overweight":
+        print("Надо будет сделать")
+        # refactor_9_6_pereves()
+    elif result_9 == "Underweight":
+        refactor_9_nedoves_give_6()
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Было изначально:", total_weights_by_num_th)
+    print("Было изначально:", details_by_num_th)
+    if result_9 == "Norm":
+        refactor_9_if_norm()
+
+    refactor_9_6_pereves(result_9)
+    refactor_9_6_nedoves(result_9)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("После refactor_9_6:", total_weights_by_num_th)
+    print("После refactor_9_6:", details_by_num_th)
+    refactor_9(total_weights_by_num_th, details_by_num_th)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("После refactor_9:", total_weights_by_num_th)
+    print("После refactor_9:", details_by_num_th)
+
+    result_8 = check_weight_num_th_8(total_weights_by_num_th)
+    print(result_8)
+    refactor_8_nedoves(result_8)
+
+    refactor_8_pereves(result_8)
+
+    # refactor_8_6_and_8_0(result_8)    # If nedoves in 8, then addresses with 6 and 0 = None
+    # refactor_8(result_8)              # If nedoves in 8, then give all 8 from min to max num_th
+    # moving_6_44_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    # moving_6_45_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    # moving_6_49_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    # moving_6_6_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    # moving_6_4_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    # moving_6_3_to_num_th_8(result_8)  # If nedoves in 8, then give 6_3 0 from num_th=None to num_th=8
+    # moving_6_2_to_num_th_8(result_8)  # If nedoves in 8, then give 6_2 0 from num_th=None to num_th=8
+    # moving_6_1_to_num_th_8(result_8)  # If nedoves in 8, then give 6_1 0 from num_th=None to num_th=8
+
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Было изначально:", total_weights_by_num_th)
+    print("Было изначально:", details_by_num_th)
+
+    result_7 = check_weight_num_th_7()
+    print(result_7)
+    if result_7 == "Overweight":
+        give_6_from_7_pereves_to_9_with_nedoves()
+    result_7 = check_weight_num_th_7()
+    if result_7 == "Norm":
+        refactor_7_if_norm()
+
+
+
+
+
+    add_num_th_7()
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Было изначально:", total_weights_by_num_th)
+    print("Было изначально:", details_by_num_th)
+    print("Перехожу к location = 6")
+    result_6 = check_weight_num_th_6(total_weights_by_num_th)
+    print(result_6)
+    check_nedoves_6_6(result_6)
+    check_nedoves_6_0(result_6)
+
+    print("Перехожу к location = 5")
+    result_5 = check_weight_num_th_5()
+    print(result_5)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Стало после 5:", total_weights_by_num_th, details_by_num_th)
+
+    add_num_th_5(result_5, total_weights_by_num_th, details_by_num_th)
+
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Стало после 5:", total_weights_by_num_th, details_by_num_th)
+
+    result_2 = check_weight_num_th_2()
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Стало после 2:", total_weights_by_num_th)
+    print("Стало после 2:", details_by_num_th)
+
+    add_num_th_2(result_2, total_weights_by_num_th, details_by_num_th)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    check_12_th_2()
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    correct_0_2(total_weights_by_num_th, details_by_num_th)
+    print("Стало после 2:", total_weights_by_num_th)
+    print("Стало после 2:", details_by_num_th)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    correct_1(total_weights_by_num_th, details_by_num_th)
+
+
+@dp.callback_query_handler(text="overWeight_2_old")
+async def start_distribute_route(query: types.CallbackQuery):
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Было изначально:", total_weights_by_num_th)
+    print("Было изначально:", details_by_num_th)
+    result_9 = check_weight_num_th_9(total_weights_by_num_th)
+    print(result_9)
+    refactor_9_6(result_9, total_weights_by_num_th, details_by_num_th)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("После refactor_9_6:", total_weights_by_num_th)
+    print("После refactor_9_6:", details_by_num_th)
+    refactor_9(total_weights_by_num_th, details_by_num_th)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("После refactor_9:", total_weights_by_num_th)
+    print("После refactor_9:", details_by_num_th)
+
+    result_8 = check_weight_num_th_8(total_weights_by_num_th)
+    print(result_8)
+    refactor_8_6_and_8_0(result_8)    # If nedoves in 8, then addresses with 6 and 0 = None
+    refactor_8(result_8)              # If nedoves in 8, then give all 8 from min to max num_th
+
+    moving_6_44_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    moving_6_45_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    moving_6_49_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    moving_6_6_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    moving_6_4_to_num_th_8(result_8)  # If nedoves in 8, then give 6_4 from num_th=None to num_th=8
+    moving_6_3_to_num_th_8(result_8)  # If nedoves in 8, then give 6_3 0 from num_th=None to num_th=8
+    moving_6_2_to_num_th_8(result_8)  # If nedoves in 8, then give 6_2 0 from num_th=None to num_th=8
+    moving_6_1_to_num_th_8(result_8)  # If nedoves in 8, then give 6_1 0 from num_th=None to num_th=8
+
+    result_7 = check_weight_num_th_7(total_weights_by_num_th)
+    print(result_7)
+    add_num_th_7(result_7)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Было изначально:", total_weights_by_num_th)
+    print("Было изначально:", details_by_num_th)
+    print("Перехожу к location = 6")
+    result_6 = check_weight_num_th_6(total_weights_by_num_th)
+    print(result_6)
+    check_nedoves_6_6(result_6)
+    check_nedoves_6_0(result_6)
+
+    print("Перехожу к location = 5")
+    result_5 = check_weight_num_th_5()
+    print(result_5)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Стало после 5:", total_weights_by_num_th, details_by_num_th)
+
+    add_num_th_5(result_5, total_weights_by_num_th, details_by_num_th)
+
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Стало после 5:", total_weights_by_num_th, details_by_num_th)
+
+    result_2 = check_weight_num_th_2()
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    print("Стало после 2:", total_weights_by_num_th)
+    print("Стало после 2:", details_by_num_th)
+
+    add_num_th_2(result_2, total_weights_by_num_th, details_by_num_th)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    check_12_th_2(total_weights_by_num_th, details_by_num_th)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    correct_0_2(total_weights_by_num_th, details_by_num_th)
+    print("Стало после 2:", total_weights_by_num_th)
+    print("Стало после 2:", details_by_num_th)
+    total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    correct_1(total_weights_by_num_th, details_by_num_th)
+
+
+
+
+
+
+    # add_num_th_9(result_9, total_weights_by_num_th, details_by_num_th)
+    # share_weight_9(total_weights_by_num_th, details_by_num_th)
+    # time.sleep(2)
+    #
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # print("Было изначально:", total_weights_by_num_th)
+    # print("Было изначально:", details_by_num_th)
+    # result_8 = check_weight_num_th_8(total_weights_by_num_th)
+    # print(result_8)
+    # add_num_th_8(result_8, total_weights_by_num_th, details_by_num_th)
+    # share_weight_8(total_weights_by_num_th, details_by_num_th)
+    # correct_8_0(result_8, total_weights_by_num_th, details_by_num_th)  # расформировываем 8 если недовес
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # print("Перед correct_8:", total_weights_by_num_th)
+    # print("Перед correct_8:", details_by_num_th)
+    # correct_8_49(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # correct_8_4(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # correct_8_3(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # correct_8_2(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    #correct_8_1(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # correct_0_3(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # correct_0_2(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # correct_0_1(total_weights_by_num_th, details_by_num_th)
+    # time.sleep(2)
+    #
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # print("Было перед 7:", total_weights_by_num_th)
+    # print("Было перед 7:", details_by_num_th)
+    # result_7 = check_weight_num_th_7(total_weights_by_num_th)
+    # print(result_7)
+    # insert_for_7_with_nedoves(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # print("Стало после insert_for_7_with_nedoves:", total_weights_by_num_th)
+    # print("Стало после insert_for_7_with_nedoves:", details_by_num_th)
+    # result_7 = check_weight_num_th_7(total_weights_by_num_th)
+    # print(result_7)
+    # add_num_th_7(result_7, total_weights_by_num_th, details_by_num_th)
+    # time.sleep(2)
+    #
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # print("Стало после 7:", total_weights_by_num_th)
+    # print("Стало после 7:", details_by_num_th)
+    # print("Перехожу к location = 6")
+    # result_6 = check_weight_num_th_6(total_weights_by_num_th)
+    # print(result_6)
+    # add_num_th_6(result_6, total_weights_by_num_th, details_by_num_th)
+    # print("Перехожу к location = 5")
+    # result_5 = check_weight_num_th_5(total_weights_by_num_th, details_by_num_th)
+    # print(result_5)
+    # add_num_th_5(result_5, total_weights_by_num_th, details_by_num_th)
+    #
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # print("Стало после 5:", total_weights_by_num_th)
+    # print("Стало после 5:", details_by_num_th)
+    # time.sleep(2)
+    # result_2 = check_weight_num_th_2(total_weights_by_num_th, details_by_num_th)
+    # print(result_2)
+    # add_num_th_2(result_2, total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # check_14_th_2(total_weights_by_num_th, details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # correct_0_2(total_weights_by_num_th, details_by_num_th)
+    # print("Стало после 2:", total_weights_by_num_th)
+    # print("Стало после 2:", details_by_num_th)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # correct_1(total_weights_by_num_th, details_by_num_th)
+    actually_info = actually_details_num_th()
+    correct_max_to_min(actually_info)  # if num_th with weight = 0: give addresses from max to min_num_th
+
+    # result_9 = check_2_weight_num_th_9(total_weights_by_num_th, details_by_num_th)
+    # print(result_9)
+    # add_num_th_9(result_9, total_weights_by_num_th, details_by_num_th)
+    # share_weight_9(total_weights_by_num_th, details_by_num_th)
+    # time.sleep(2)
+
+    # adjusting_location_9(total_weights_by_num_th, details_by_num_th)
+    # time.sleep(2)
+    # total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+    # actually_weight_reestr_table(total_weights_by_num_th)
+
+    # adjusting_location_8(total_weights_by_num_th, details_by_num_th)
+
+    # assign_drivers_to_addresses()
     time.sleep(2)
-    #display_assigned_driver_details()
-    #reassign_tasks_to_drivers_with_capacity()
+
+    # display_assigned_driver_details()
+    # reassign_tasks_to_drivers_with_capacity()
     return
 
 
@@ -1043,7 +1314,7 @@ def ranges_addresses_excel_1():
 #         logging.error(f"Ошибка при обработке данных: {e}")
 
 
-def ranges_addresses_excel():
+def ranges_addresses_excel_after():
     logging.info("Start ranges_addresses_excel")
 
     try:
@@ -1115,6 +1386,78 @@ def ranges_addresses_excel():
         logging.error(f"Ошибка при обработке данных: {e}")
 
 
+def ranges_addresses_excel():
+    logging.info("Start ranges_addresses_excel")
+
+    try:
+        file_name_today = f"qwerty.xlsx"
+        path_to_open = os.path.join(os.getcwd(), file_name_today)
+        wb = openpyxl.load_workbook(path_to_open)
+        sheet = wb.active
+        logging.info("Excel-файл успешно открыт")
+    except Exception as e:
+        logging.error(f"Ошибка при открытии Excel-файла: {e}")
+        return
+
+    try:
+        row_ranges = {}
+        current_tn = None
+        start_row = None
+        current_row_number = None
+
+        # Вычисление диапазонов строк
+        for row in range(5, sheet.max_row + 1):
+            num_th = sheet.cell(row=row, column=3).value
+            first_column_value = sheet.cell(row=row, column=1).value
+            current_row_number = row
+
+            if first_column_value == "Итого":
+                break
+
+            if num_th and current_tn != num_th:
+                if current_tn is not None:
+                    row_ranges[current_tn] = {
+                        'start_num_th': start_row,
+                        'start_addresses': start_row + 1,
+                        'end': row - 1,
+                        'count': row - start_row - 1
+                    }
+                current_tn = num_th
+                start_row = row
+
+        if current_tn is not None:
+            row_ranges[current_tn] = {
+                'start_num_th': start_row,
+                'start_addresses': start_row + 1,
+                'end': sheet.max_row if first_column_value != "Итого" else row - 1,
+                'count': (sheet.max_row if first_column_value != "Итого" else row) - start_row - 1
+            }
+
+        if current_row_number is not None:
+            print(f"Line number with 'итого': {current_row_number}")
+
+
+        # Подсчет суммы и запись ее в соответствующую строку
+        # for num_th, (start, end) in row_ranges.items():
+        #     sum_weight = 0
+        #     for row in range(start + 1, end + 1):
+        #         try:
+        #             weight = float(sheet.cell(row=row, column=11).value)
+        #             sum_weight += weight
+        #         except (ValueError, TypeError):
+        #             pass
+        #     sheet.cell(row=start, column=11).value = sum_weight
+        #     logging.info(f"Записана сумма веса {sum_weight} для 'Номера ТН' {num_th} в строке {start}")
+
+        wb.save('qwerty.xlsx')
+        logging.info("Считаны диапазоны с Excel'я в который вставили шаблоны с новыми ТН")
+        print(f"Диапазоны ТН: {row_ranges}")
+        return row_ranges, current_row_number
+
+    except Exception as e:
+        logging.error(f"Ошибка при обработке данных: {e}")
+
+
 def ranges_addresses_excel_finish():
     logging.info("Start ranges_addresses_excel")
 
@@ -1137,7 +1480,7 @@ def ranges_addresses_excel_finish():
         print(last_code_tt)
         found_row_number = None
 
-        for row in sheet.iter_rows(min_row=50):  # предполагая, что первая строка - это заголовки
+        for row in sheet.iter_rows(min_row=50):
             code_tt = row[7].value  # Получение значения из 8-й колонки
             if code_tt == last_code_tt:
                 found_row_number = row[0].row
@@ -1515,12 +1858,13 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
     # Выводим список отсутствующих num_th
     print("Отсутствующие num_th:", missing_num_th)
 
-    print(additional_rows_to_insert)
+    print(f"Добавляем в Excel {additional_rows_to_insert} строк(и) под шаблоны для новых ТН, по 2 на каждый новую ТН")
+
     if missing_num_th_count == 1:
         for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
             dest_cell = sheet.cell(row=finish_row, column=col_num)
             if col_num == 3 and src_cell.value is not None:
-                prefix = "0000-0"
+                prefix = "0000-00"
                 num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
                 if num_part.isdigit():  # Увеличиваем число на 1
                     new_value = prefix + str(int(num_part) + 1)
@@ -1535,6 +1879,8 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
             dest_cell = sheet.cell(row=finish_row + 1, column=col_num)
             dest_cell.value = src_cell.value  # Копирование значения ячейки
             copy_cell_style(src_cell, dest_cell)
+        print("Добавили шаблон для одной новой ТН")
+
     else:
         print("Отсутствует номеров ТН:", missing_num_th_count)
 
@@ -1542,7 +1888,7 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
         for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
             dest_cell = sheet.cell(row=finish_row, column=col_num)
             if col_num == 3 and src_cell.value is not None:
-                prefix = "0000-0"
+                prefix = "0000-00"
                 num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
                 if num_part.isdigit():  # Увеличиваем число на 1
                     new_value = prefix + str(int(num_part) + 1)
@@ -1561,7 +1907,7 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
         for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
             dest_cell = sheet.cell(row=finish_row + 2, column=col_num)
             if col_num == 3 and src_cell.value is not None:
-                prefix = "0000-0"
+                prefix = "0000-00"
                 num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
                 if num_part.isdigit():  # Увеличиваем число на 2
                     new_value = prefix + str(int(num_part) + 2)
@@ -1576,8 +1922,73 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
             dest_cell = sheet.cell(row=finish_row + 3, column=col_num)
             dest_cell.value = src_cell.value  # Копирование значения ячейки
             copy_cell_style(src_cell, dest_cell)
+        print("Добавили шаблон для двух новых ТН")
+
     else:
         print("Отсутствует номеров ТН:", missing_num_th_count)
+
+    if missing_num_th_count == 3:
+        for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+            dest_cell = sheet.cell(row=finish_row, column=col_num)
+            if col_num == 3 and src_cell.value is not None:
+                prefix = "0000-00"
+                num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                if num_part.isdigit():  # Увеличиваем число на 1
+                    new_value = prefix + str(int(num_part) + 1)
+                    dest_cell.value = new_value
+                else:
+                    dest_cell.value = src_cell.value
+            else:
+                dest_cell.value = src_cell.value
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+            dest_cell = sheet.cell(row=finish_row + 1, column=col_num)
+            dest_cell.value = src_cell.value  # Копирование значения ячейки
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+            dest_cell = sheet.cell(row=finish_row + 2, column=col_num)
+            if col_num == 3 and src_cell.value is not None:
+                prefix = "0000-00"
+                num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                if num_part.isdigit():  # Увеличиваем число на 2
+                    new_value = prefix + str(int(num_part) + 2)
+                    dest_cell.value = new_value
+                else:
+                    dest_cell.value = src_cell.value
+            else:
+                dest_cell.value = src_cell.value
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+            dest_cell = sheet.cell(row=finish_row + 3, column=col_num)
+            dest_cell.value = src_cell.value  # Копирование значения ячейки
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_num_th], start=1):
+            dest_cell = sheet.cell(row=finish_row + 4, column=col_num)
+            if col_num == 3 and src_cell.value is not None:
+                prefix = "0000-00"
+                num_part = src_cell.value[6:]  # Отбрасываем первые шесть символов
+                if num_part.isdigit():  # Увеличиваем число на 3
+                    new_value = prefix + str(int(num_part) + 3)
+                    dest_cell.value = new_value
+                else:
+                    dest_cell.value = src_cell.value
+            else:
+                dest_cell.value = src_cell.value
+            copy_cell_style(src_cell, dest_cell)
+
+        for col_num, src_cell in enumerate(sheet[last_start_addresses], start=1):
+            dest_cell = sheet.cell(row=finish_row + 5, column=col_num)
+            dest_cell.value = src_cell.value  # Копирование значения ячейки
+            copy_cell_style(src_cell, dest_cell)
+        print("Добавили шаблон для трёх новых ТН")
+
+    else:
+        print("Отсутствует номеров ТН:", missing_num_th_count)
+
     # for num_th, count in addresses_count.items():  # Пропускаем num_th, которых нет в row_ranges
     #     if num_th not in row_ranges:
     #         continue
@@ -1602,9 +2013,10 @@ def adjust_rows_for_addresses(addresses_count, row_ranges, finish_row):
     #     # Обновляем row_ranges с учетом добавленных или удаленных строк
     #     row_ranges[num_th] = {'start_num_th': start_num_th, 'start_addresses': start_addresses, 'end': end + offset, 'count': count}
     finish_row += additional_rows_to_insert
-    print(finish_row)
+    print(f"№ строки Итого - {finish_row}, т.к. добавились новые ТН")
     wb.save('qwerty.xlsx')
     logging.info("Данные успешно записаны в Excel")
+    return finish_row
 
 
 def actually_num_th(addresses_count, row_ranges):
@@ -1872,6 +2284,7 @@ def is_merged_cell(sheet, cell):
             return True
     return False
 
+
 def get_start_cell_of_merged_range(sheet, cell):
     """ Получение начальной ячейки объединенной области """
     for merged_range in sheet.merged_cells.ranges:
@@ -1913,7 +2326,8 @@ def insert_finish_row(found_row_number):
             return
 
         # Сохранение данных строки "Итого"
-        total_row_data = [sheet1.cell(row=current_row_number, column=col).value for col in range(1, sheet1.max_column + 1)]
+        total_row_data = [sheet1.cell(
+            row=current_row_number, column=col).value for col in range(1, sheet1.max_column + 1)]
 
     except Exception as e:
         logging.error(f"Ошибка при открытии первого Excel-файла: {e}")
@@ -1928,7 +2342,8 @@ def insert_finish_row(found_row_number):
 
         # Вставка данных в found_row_number + 1
         for col_num, value in enumerate(total_row_data, start=1):
-            dest_cell = sheet2.cell(row=found_row_number + 1, column=col_num)
+            dest_cell = sheet2.cell(row=found_row_number, column=col_num)
+            # dest_cell = sheet2.cell(row=found_row_number + 1, column=col_num)
             src_cell = sheet1.cell(row=current_row_number, column=col_num)
 
             if is_merged_cell(sheet2, dest_cell):
@@ -2122,14 +2537,16 @@ async def show_main_report(call: CallbackQuery):
     print(main_json)
     addresses_count = {k: addresses_count[k] for k in sorted(addresses_count.keys())}
     print(addresses_count)
-    excel_count, finish_row = ranges_addresses_excel()
-    adjust_rows_for_addresses(addresses_count, excel_count, finish_row)
+    excel_count, finish_row = ranges_addresses_excel()  # Подсчёт диапазонов ТН в реестре от заказчика
+    finish_row = adjust_rows_for_addresses(addresses_count, excel_count, finish_row)  # Здесь вставляем шаблоны для новых ТН, которые появились из-за перевеса
+    insert_finish_row(finish_row)  # Последня строка с "Итого" затёрлась новыми ТН - её нужно добавить
+    excel_count, finish_row = ranges_addresses_excel()  # Подсчёт диапазонов с новыми ТН
     actually_num_th(addresses_count, excel_count)
     main_json_to_excel()
     time.sleep(2)
-    found_number = ranges_addresses_excel_finish()
-    time.sleep(2)
-    insert_finish_row(found_number)
+    # found_number = ranges_addresses_excel_finish()
+    # time.sleep(2)
+    # insert_finish_row(found_number)
 
 
 # @dp.callback_query_handler(text="optimalReport")
