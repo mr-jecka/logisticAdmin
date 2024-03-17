@@ -18,7 +18,8 @@ from database import get_drivers_for_route, get_routes, insert_driver_for_route,
     refactor_9, refactor_8_6_and_8_0, refactor_8, moving_6_3_to_num_th_8, moving_6_4_to_num_th_8,\
     moving_6_2_to_num_th_8, moving_6_1_to_num_th_8, moving_6_44_to_num_th_8, moving_6_45_to_num_th_8,\
     moving_6_49_to_num_th_8, moving_6_6_to_num_th_8, check_nedoves_6_6, check_nedoves_6_0, refactor_9_6_nedoves, \
-    refactor_8_pereves, refactor_8_nedoves, give_6_from_7_pereves_to_9_with_nedoves, refactor_7_if_norm
+    refactor_8_pereves, refactor_8_nedoves, give_6_from_7_pereves_to_9_with_nedoves, refactor_7_if_norm, \
+    refactor_9_nedoves_3_overweight, refactor_9_nedoves_3_12
 
 from aiogram.types import CallbackQuery, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.dispatcher import FSMContext
@@ -120,20 +121,32 @@ async def start_distribute_route(query: types.CallbackQuery):
     total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
     print("Было изначально:", total_weights_by_num_th)
     print("Было изначально:", details_by_num_th)
-    result_9 = check_weight_num_th_9()
-
+    result_9, sum_num_th = check_weight_num_th_9()
+    print(sum_num_th)
     if result_9 == "Overweight":
         print("Надо будет сделать")
         # refactor_9_6_pereves()
     elif result_9 == "Underweight":
-        refactor_9_nedoves_give_6()
+        if sum_num_th == 3:
+            refactor_9_nedoves_3_overweight()
+            refactor_9_nedoves_3_12()
+
+        # elif sum_num_th == 2:
+        #     refactor_9_nedoves_2()
+        # elif sum_num_th == 1:
+        #     refactor_9_nedoves_1()
+        # elif sum_num_th == 4:
+        #     refactor_9_nedoves_4()
+        else:
+            print()
+        # refactor_9_nedoves_give_6()
     total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
     print("Было изначально:", total_weights_by_num_th)
     print("Было изначально:", details_by_num_th)
     if result_9 == "Norm":
-        refactor_9_if_norm()
+        print("Надо будет сделать")
+        #refactor_9_if_norm()
 
-    refactor_9_6_pereves(result_9)
     refactor_9_6_nedoves(result_9)
     total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
     print("После refactor_9_6:", total_weights_by_num_th)

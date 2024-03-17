@@ -1138,17 +1138,21 @@ def actually_details_num_th():
         return None
 
 
+def calculate_sum_points(details):
+    num_code_tt = len({entry['code_tt'] for entry in details if entry['code_tt'] is not None})
+    return num_code_tt
+
+
 def calculate_details_by_num_th():
     try:
         existing_none_row = session.query(ReestrTable).filter(ReestrTable.num_th == None).first()
 
-        query = session.query(
-            AddressTable.num_th,
-            AddressTable.location,
-            AddressTable.priority,
-            AddressTable.weight,
-            AddressTable.count_boxes,
-            AddressTable.code_tt)
+        query = session.query(AddressTable.num_th,
+                              AddressTable.location,
+                              AddressTable.priority,
+                              AddressTable.weight,
+                              AddressTable.count_boxes,
+                              AddressTable.code_tt)
 
         results = query.all()
 
@@ -1164,23 +1168,23 @@ def calculate_details_by_num_th():
                 'priority': priority,
                 'weight': weight,
                 'count_boxes': count_boxes,
-                'code_tt': code_tt
-            })
+                'code_tt': code_tt})
 
             if num_th not in total_weights_by_num_th:
                 total_weights_by_num_th[num_th] = {
                     'total_weight': 0, 'total_count_boxes': 0, 'locations': set(), 'sum_points': 0}
+
             total_weights_by_num_th[num_th]['total_weight'] += weight
             total_weights_by_num_th[num_th]['total_count_boxes'] += count_boxes
             total_weights_by_num_th[num_th]['locations'].add(location)
 
         for num_th, details in details_by_num_th.items():
-            num_code_tt = len(set(entry['code_tt'] for entry in details if entry['code_tt'] is not None))
-            total_weights_by_num_th[num_th]['sum_points'] = num_code_tt
+            total_weights_by_num_th[num_th]['sum_points'] = calculate_sum_points(details)
 
         sorted_total_weights = sorted(
             total_weights_by_num_th.items(), key=lambda item: item[1]['total_weight'], reverse=True)
 
+        print(sorted_total_weights)
         for num_th, data in sorted_total_weights:
             total_weight = data['total_weight']
             total_count_boxes = data['total_count_boxes']
@@ -3163,6 +3167,138 @@ def refactor_9(total_weights_by_num_th, details_by_num_th):
         print(f"An error occurred: {str(e)}")
 
 
+def refactor_9_nedoves_3_12():
+    print("Start refactor_9_nedoves_3_12")
+    min_num_th = None
+    max_num_th = None
+    total_weight_nedoves_norm = None
+    try:
+        # total_weights_by_num_th = dict(total_weights_by_num_th)
+        # nedoves_location_6 = [num_th for num_th, data in total_weights_by_num_th.items() if
+        #                       ('6' in data['locations'] and ('7' in data['locations'] or '8' in data['locations']))
+        #                       and data['total_weight'] < 3100]
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        location_9_6 = [num_th for num_th, data in total_weights_by_num_th if
+                            '9' in data['locations'] and '6' in data['locations']]
+
+        nedoves_9_with_12 = [num_th for num_th, data in total_weights_by_num_th if
+                            '9' in data['locations'] and data['sum_points'] >= 12 and data['total_weight'] < 2800]
+
+        nedoves_9_norm = [num_th for num_th, data in total_weights_by_num_th if
+                          '9' in data['locations'] and data['total_weight'] < 2800 and num_th not in nedoves_9_with_12]
+
+        if nedoves_9_with_12:
+            max_num_th = max(nedoves_9_with_12,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("nedoves_9_with_12:", max_num_th)
+
+        if nedoves_9_norm:
+            min_num_th = min(nedoves_9_norm,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+            print("nedoves_9_norm:", max_num_th)
+            if min_num_th in details_by_num_th:
+                total_weight_min_th = next(
+                    data['total_weight'] for num, data in total_weights_by_num_th if num == min_num_th)
+
+        code_tt_9 = []
+        if max_num_th and min_num_th:
+            if max_num_th in details_by_num_th:
+                sorted_items = sorted(details_by_num_th[max_num_th], key=lambda x: x['weight'])
+                total_weight = total_weight_min_th
+                for item in sorted_items:
+                    if item.get('location') == '9':
+                        if total_weight < 2800:
+                            total_weight += item['weight']
+                            code_tt_9.append(item['code_tt'])
+                        else:
+                            break
+
+        if nedoves_9_norm:
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                code_tt_9)).update({'num_th': min_num_th}, synchronize_session='fetch')
+            session.commit()
+            logging.debug("num_th updated successfully for location 9 code_tt.")
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        code_tt_none = [item['code_tt'] for item in details_by_num_th.get(None, [])]
+
+        filtered_6_2 = [item for item in details_by_num_th.get(None, []) if item.get(
+            'location') == '6' and item.get('priority') == 2]
+        code_tt_6_2 = [item['code_tt'] for item in filtered_6_2]
+        weight_code_tt_6_2 = [item['weight'] for item in filtered_6_2]
+
+        print("End refactor_9_nedoves_3")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+def refactor_9_nedoves_3_overweight():
+    print("Start refactor_9_nedoves")
+    min_num_th = None
+    max_num_th = None
+    sum_address_min_num_th = None
+
+    try:
+        # total_weights_by_num_th = dict(total_weights_by_num_th)
+        # nedoves_location_6 = [num_th for num_th, data in total_weights_by_num_th.items() if
+        #                       ('6' in data['locations'] and ('7' in data['locations'] or '8' in data['locations']))
+        #                       and data['total_weight'] < 3100]
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        overweight_3400 = [num_th for num_th, data in total_weights_by_num_th if
+                                 '9' in data['locations'] and 3500 >= data['total_weight'] >= 3400]
+
+        if overweight_3400:
+            max_num_th = max(overweight_3400,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        with_12_2300 = [num_th for num_th, data in total_weights_by_num_th if
+                            '9' in data['locations'] and data['sum_points'] >= 12 and data['total_weight'] < 2300]
+
+        if with_12_2300:
+            min_num_th = min(with_12_2300,
+                key=lambda num_th: next(data['total_weight'] for num, data in total_weights_by_num_th if num == num_th),
+                default=float('inf'))
+
+        overwight_9_code_tt = []
+        if with_12_2300 and overweight_3400:
+            if max_num_th in details_by_num_th:
+                items_in_max_num_th = [item for item in details_by_num_th[max_num_th]]
+                sorted_items_max = sorted(details_by_num_th[max_num_th], key=lambda x: x['weight'], reverse=True)
+                max_weight = sorted_items_max[0]['weight']
+                sorted_items_min = sorted(details_by_num_th[min_num_th], key=lambda x: x['weight'])
+                min_weight = sorted_items_min[0]['weight']
+                total_weight = next(
+                    data['total_weight'] for num, data in total_weights_by_num_th if num == max_num_th)
+
+                print(sorted_items_max[0]['weight'])
+                print(sorted_items_max[1]['weight'])
+                print(sorted_items_max[2]['weight'])
+
+                overwight_9_code_tt.append(sorted_items_max[0]['code_tt'])
+
+        if overwight_9_code_tt:
+            session.query(AddressTable).filter(AddressTable.code_tt.in_(
+                overwight_9_code_tt)).update({'num_th': min_num_th}, synchronize_session='fetch')
+            session.commit()
+            logging.debug("num_th updated successfully for location 6 code_tt.")
+
+        total_weights_by_num_th, details_by_num_th = calculate_details_by_num_th()
+
+        print("End refactor_9_nedoves_3")
+
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
 def refactor_9_nedoves_give_6():
     print("Start refactor_9_6")
     min_num_th = None
@@ -3461,11 +3597,11 @@ def check_weight_num_th_9():
                   f" Их перевес - {average_weight_location_9}")
 
         if average_weight_location_9 >= 3300:
-            return "Overweight"
+            return "Overweight", num_th_in_location_9
         elif num_th_in_location_9 > 1 and average_weight_location_9 < 2800:
-            return "Underweight"
+            return "Underweight", num_th_in_location_9
         else:
-            return "Norm"
+            return "Norm", num_th_in_location_9
 
     except ZeroDivisionError:
         return "Error: Division by zero occurred"
@@ -3779,7 +3915,6 @@ def refactor_7_if_norm():
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
-
 
 
 def give_6_from_7_pereves_to_9_with_nedoves():
